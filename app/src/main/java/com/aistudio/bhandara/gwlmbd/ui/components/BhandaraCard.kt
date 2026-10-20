@@ -191,7 +191,7 @@ fun BhandaraCard(
                     )
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "रास्ता देखें",
+                        text = "Map पर देखें",
                         style = MaterialTheme.typography.labelLarge
                     )
                 }

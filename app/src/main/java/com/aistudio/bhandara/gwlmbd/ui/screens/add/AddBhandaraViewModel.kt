@@ -74,13 +74,11 @@ class AddBhandaraViewModel : ViewModel() {
         isSubmitting = true
         errorMessage = null
         try {
-            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            val ist = TimeZone.getTimeZone("Asia/Kolkata")
+            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = ist }
             val parsedDate = sdf.parse(date) ?: Date()
-            val endCal = Calendar.getInstance().apply {
-                time = parsedDate
-                set(Calendar.HOUR_OF_DAY, 23)
-                set(Calendar.MINUTE, 59)
-            }
+            val startMillis = parsedDate.time
+            val endMillis = Bhandara.parseEventEndMillis(date, endTime)
 
             val mapsUrl = if (latitude != 0.0 && longitude != 0.0) {
                 "https://www.google.com/maps/search/?api=1&query=$latitude,$longitude"
@@ -99,8 +97,8 @@ class AddBhandaraViewModel : ViewModel() {
                 date = date,
                 startTime = startTime,
                 endTime = endTime,
-                startDateTime = parsedDate.time,
-                endDateTime = endCal.timeInMillis,
+                startDateTime = startMillis,
+                endDateTime = if (endMillis > 0L) endMillis else (startMillis + 24 * 60 * 60 * 1000L),
                 contactName = contactName.trim(),
                 contactPhone = contactPhone.trim(),
                 createdBy = if (contactName.isNotBlank()) contactName.trim() else (currentUser?.name?.ifBlank { "अनाम भक्त" } ?: "अनाम भक्त"),

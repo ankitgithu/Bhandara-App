@@ -44,6 +44,7 @@ fun HomeScreen(
     var bhandaras by remember { mutableStateOf<List<Bhandara>>(emptyList()) }
     var memes by remember { mutableStateOf<List<Meme>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     var selectedTab by remember { mutableIntStateOf(0) }
     var showLoginPrompt by remember { mutableStateOf(false) }
     var showDonationSheet by remember { mutableStateOf(false) }
@@ -59,14 +60,27 @@ fun HomeScreen(
     fun loadData() {
         scope.launch {
             isLoading = true
-            bhandaras = repository.getActiveBhandaras(selectedCity)
-            memes = repository.getMemes(selectedCity)
-            isLoading = false
+            errorMessage = null
+            try {
+                bhandaras = repository.getActiveBhandaras(selectedCity)
+                memes = repository.getMemes(selectedCity)
+            } catch (e: Exception) {
+                errorMessage = "भंडारे की जानकारी लोड नहीं हो पाई।"
+            } finally {
+                isLoading = false
+            }
         }
     }
 
     LaunchedEffect(selectedCity) {
         loadData()
+        try {
+            repository.listenToActiveBhandaras(selectedCity).collect { updatedList ->
+                bhandaras = updatedList
+                isLoading = false
+                errorMessage = null
+            }
+        } catch (_: Exception) {}
     }
 
     // Filter bhandaras according to selected tab
@@ -311,6 +325,15 @@ fun HomeScreen(
                     ) {
                         CircularProgressIndicator(color = DeepRed)
                     }
+                }
+            } else if (errorMessage != null) {
+                item {
+                    EmptyStateView(
+                        title = "भंडारे की जानकारी लोड नहीं हो पाई।",
+                        description = "कृपया इंटरनेट कनेक्शन चेक करें और दोबारा कोशिश करें।",
+                        buttonText = "फिर से कोशिश करें",
+                        onRetry = { loadData() }
+                    )
                 }
             } else if (displayedBhandaras.isEmpty()) {
                 item {

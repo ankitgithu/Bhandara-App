@@ -1,5 +1,7 @@
 package com.aistudio.bhandara.gwlmbd.ui.screens.admin
 
+import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -26,6 +28,10 @@ import com.aistudio.bhandara.gwlmbd.ui.components.EmptyStateView
 import com.aistudio.bhandara.gwlmbd.ui.theme.*
 import com.aistudio.bhandara.gwlmbd.util.AppUpdateManager
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -67,9 +73,9 @@ fun AdminScreen(
     }
 
     var selectedAdminTab by remember { mutableIntStateOf(0) }
-    val adminTabs = listOf("लंबित अनुमोदन", "मीम प्रबंधन", "शिकायतें", "समाप्त भंडारे", "ऐप अपडेट")
+    val adminTabs = listOf("सक्रिय भंडारे", "समाप्त भंडारे", "मीम प्रबंधन", "शिकायतें", "ऐप अपडेट")
 
-    var pendingList by remember { mutableStateOf<List<Bhandara>>(emptyList()) }
+    var activeList by remember { mutableStateOf<List<Bhandara>>(emptyList()) }
     var expiredList by remember { mutableStateOf<List<Bhandara>>(emptyList()) }
     var memeList by remember { mutableStateOf<List<Meme>>(emptyList()) }
     var reportList by remember { mutableStateOf<List<Report>>(emptyList()) }
@@ -86,8 +92,8 @@ fun AdminScreen(
         scope.launch {
             isLoading = true
             try {
-                pendingList = repository.getPendingBhandaras()
-                expiredList = repository.getExpiredBhandaras()
+                activeList = repository.getAllActiveBhandarasForAdmin()
+                expiredList = repository.getAllExpiredBhandarasForAdmin()
                 memeList = repository.getAllMemesForAdmin()
                 reportList = repository.getAllReports()
                 val updateCfg = repository.getAppUpdateConfig()
@@ -139,7 +145,7 @@ fun AdminScreen(
             )
         },
         floatingActionButton = {
-            if (selectedAdminTab == 1) { // Memes tab
+            if (selectedAdminTab == 2) { // Memes tab
                 FloatingActionButton(
                     onClick = { showAddMemeDialog = true },
                     containerColor = DeepRed,
@@ -167,8 +173,17 @@ fun AdminScreen(
                     colors = CardDefaults.cardColors(containerColor = SaffronOrange.copy(alpha = 0.12f))
                 ) {
                     Column(modifier = Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(text = "${pendingList.size}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = SaffronOrange)
-                        Text(text = "लंबित", style = MaterialTheme.typography.labelSmall)
+                        Text(text = "${activeList.size}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = SaffronOrange)
+                        Text(text = "सक्रिय भंडारे", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+                Card(
+                    modifier = Modifier.weight(1f),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(modifier = Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(text = "${expiredList.size}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text(text = "समाप्त", style = MaterialTheme.typography.labelSmall)
                     }
                 }
                 Card(
@@ -186,7 +201,7 @@ fun AdminScreen(
                 ) {
                     Column(modifier = Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(text = "${memeList.size}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = WarmGold)
-                        Text(text = "कुल मीम्स", style = MaterialTheme.typography.labelSmall)
+                        Text(text = "मीम्स", style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
@@ -219,12 +234,12 @@ fun AdminScreen(
                 }
             } else {
                 when (selectedAdminTab) {
-                    // Pending Submissions
+                    // 0: Active Bhandaras (All active documents from Firestore)
                     0 -> {
-                        if (pendingList.isEmpty()) {
+                        if (activeList.isEmpty()) {
                             EmptyStateView(
-                                title = "कोई लंबित भंडारा नहीं है",
-                                description = "सभी सबमिशन स्वीकृत किए जा चुके हैं।"
+                                title = "कोई सक्रिय भंडारा नहीं मिला",
+                                description = "डेटाबेस में सक्रिय भंडारे यहाँ दिखेंगे।"
                             )
                         } else {
                             LazyColumn(
@@ -232,7 +247,23 @@ fun AdminScreen(
                                 contentPadding = PaddingValues(16.dp),
                                 verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                items(pendingList) { item ->
+                                item {
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = DeepRed.copy(alpha = 0.1f),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = "कुल भंडारे: ${activeList.size} (Firestore लाइव डेटा)",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = DeepRed,
+                                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                                        )
+                                    }
+                                }
+
+                                items(activeList) { item ->
                                     Card(
                                         modifier = Modifier.fillMaxWidth(),
                                         shape = RoundedCornerShape(14.dp),
@@ -240,11 +271,65 @@ fun AdminScreen(
                                         elevation = CardDefaults.cardElevation(2.dp)
                                     ) {
                                         Column(modifier = Modifier.padding(16.dp)) {
-                                            Text(text = item.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = item.name.ifBlank { "अनाम भंडारा" },
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = DeepRed
+                                                )
+                                                Surface(
+                                                    shape = RoundedCornerShape(6.dp),
+                                                    color = StatusApproved.copy(alpha = 0.12f)
+                                                ) {
+                                                    Text(
+                                                        text = "सक्रिय ✓",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = StatusApproved,
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                                    )
+                                                }
+                                            }
+
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(
+                                                text = "ज़िला: ${item.getCityDisplayName()} | क्षेत्र: ${item.area.ifBlank { "उपलब्ध नहीं" }}",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            if (item.address.isNotBlank()) {
+                                                Text(text = "पता: ${item.address}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            if (item.landmark.isNotBlank()) {
+                                                Text(text = "लैंडमार्क: ${item.landmark}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+
                                             Spacer(modifier = Modifier.height(4.dp))
-                                            Text(text = "स्थान: ${item.area}, ${item.getCityDisplayName()}", style = MaterialTheme.typography.bodyMedium)
-                                            Text(text = "दिनांक: ${item.date} (${item.startTime} - ${item.endTime})", style = MaterialTheme.typography.bodySmall)
-                                            Text(text = "जोड़ा गया: ${item.createdBy}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text(
+                                                text = "दिनांक: ${item.date} (${item.startTime}${if (item.endTime.isNotBlank()) " - ${item.endTime}" else ""})",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                color = SaffronOrange,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+
+                                            if (item.contactPhone.isNotBlank() || item.contactName.isNotBlank()) {
+                                                Text(
+                                                    text = "संपर्क: ${item.contactName} (${item.contactPhone})",
+                                                    style = MaterialTheme.typography.bodySmall
+                                                )
+                                            }
+
+                                            val formattedCreated = formatTimestamp(item.createdAt)
+                                            Text(
+                                                text = "जोड़ा गया: ${item.createdBy} • $formattedCreated",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
 
                                             Spacer(modifier = Modifier.height(12.dp))
 
@@ -252,44 +337,55 @@ fun AdminScreen(
                                                 modifier = Modifier.fillMaxWidth(),
                                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
+                                                // Map Button
+                                                OutlinedButton(
+                                                    onClick = {
+                                                        val uri = if (item.latitude != 0.0 && item.longitude != 0.0) {
+                                                            Uri.parse("https://www.google.com/maps/search/?api=1&query=${item.latitude},${item.longitude}")
+                                                        } else {
+                                                            Uri.parse("https://www.google.com/maps/search/?api=1&query=${Uri.encode("${item.name}, ${item.area}, ${item.city}")}")
+                                                        }
+                                                        val mapIntent = Intent(Intent.ACTION_VIEW, uri)
+                                                        context.startActivity(mapIntent)
+                                                    },
+                                                    modifier = Modifier.weight(1f),
+                                                    shape = RoundedCornerShape(8.dp)
+                                                ) {
+                                                    Icon(imageVector = Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Map पर देखें", style = MaterialTheme.typography.labelMedium)
+                                                }
+
+                                                // Call Button
+                                                if (item.contactPhone.isNotBlank()) {
+                                                    OutlinedButton(
+                                                        onClick = {
+                                                            val callIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${item.contactPhone}"))
+                                                            context.startActivity(callIntent)
+                                                        },
+                                                        shape = RoundedCornerShape(8.dp)
+                                                    ) {
+                                                        Icon(imageVector = Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    }
+                                                }
+
+                                                // Archive / Expire Button
                                                 Button(
                                                     onClick = {
                                                         scope.launch {
                                                             try {
-                                                                repository.approveBhandara(item.id, currentUser?.auth0UserId ?: "")
+                                                                repository.archiveBhandara(item.id, currentUser.auth0UserId)
                                                                 refreshAll()
-                                                                Toast.makeText(context, "भंडारा स्वीकृत किया गया ✓", Toast.LENGTH_SHORT).show()
+                                                                Toast.makeText(context, "भंडारा समाप्त चिह्नित किया गया", Toast.LENGTH_SHORT).show()
                                                             } catch (e: Exception) {
-                                                                Toast.makeText(context, "त्रुटि: अपडेट नहीं हो सका", Toast.LENGTH_SHORT).show()
+                                                                Toast.makeText(context, "अपडेट विफल: ${e.message}", Toast.LENGTH_SHORT).show()
                                                             }
                                                         }
                                                     },
-                                                    modifier = Modifier.weight(1f),
-                                                    colors = ButtonDefaults.buttonColors(containerColor = StatusApproved)
+                                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                                    shape = RoundedCornerShape(8.dp)
                                                 ) {
-                                                    Icon(imageVector = Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                    Text("स्वीकार करें")
-                                                }
-
-                                                OutlinedButton(
-                                                    onClick = {
-                                                        scope.launch {
-                                                            try {
-                                                                repository.rejectBhandara(item.id, currentUser?.auth0UserId ?: "")
-                                                                refreshAll()
-                                                                Toast.makeText(context, "अस्वीकृत किया गया", Toast.LENGTH_SHORT).show()
-                                                            } catch (e: Exception) {
-                                                                Toast.makeText(context, "त्रुटि: अपडेट नहीं हो सका", Toast.LENGTH_SHORT).show()
-                                                            }
-                                                        }
-                                                    },
-                                                    modifier = Modifier.weight(1f),
-                                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = StatusRejected)
-                                                ) {
-                                                    Icon(imageVector = Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                    Text("अस्वीकार")
+                                                    Text("समाप्त करें", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
                                                 }
                                             }
                                         }
@@ -299,8 +395,54 @@ fun AdminScreen(
                         }
                     }
 
-                    // Manage Memes
+                    // 1: Expired / Historical Bhandaras
                     1 -> {
+                        if (expiredList.isEmpty()) {
+                            EmptyStateView(
+                                title = "कोई समाप्त भंडारा नहीं मिला",
+                                description = "समय पूरा होने के बाद भंडारे यहाँ इतिहास में सुरक्षित रहते हैं।"
+                            )
+                        } else {
+                            LazyColumn(
+                                modifier = Modifier.fillMaxSize(),
+                                contentPadding = PaddingValues(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                item {
+                                    Text(
+                                        text = "कुल समाप्त भंडारे: ${expiredList.size}",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                items(expiredList) { item ->
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                                    ) {
+                                        Column(modifier = Modifier.padding(14.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                Text(text = item.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                                Text(text = "समाप्त", style = MaterialTheme.typography.labelSmall, color = StatusExpired)
+                                            }
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(text = "दिनांक: ${item.date} | शहर: ${item.getCityDisplayName()}", style = MaterialTheme.typography.bodySmall)
+                                            Text(text = "स्थान: ${item.area}", style = MaterialTheme.typography.bodySmall)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 2: Manage Memes
+                    2 -> {
                         LazyColumn(
                             modifier = Modifier.fillMaxSize(),
                             contentPadding = PaddingValues(16.dp),
@@ -331,7 +473,7 @@ fun AdminScreen(
                                                 onCheckedChange = { active ->
                                                     scope.launch {
                                                         try {
-                                                            repository.toggleMeme(meme.id, active, currentUser?.auth0UserId)
+                                                            repository.toggleMeme(meme.id, active, currentUser.auth0UserId)
                                                             refreshAll()
                                                         } catch (e: Exception) {
                                                             Toast.makeText(context, "अपडेट नहीं हो पाया", Toast.LENGTH_SHORT).show()
@@ -343,7 +485,7 @@ fun AdminScreen(
                                                 onClick = {
                                                     scope.launch {
                                                         try {
-                                                            repository.deleteMeme(meme.id, currentUser?.auth0UserId)
+                                                            repository.deleteMeme(meme.id, currentUser.auth0UserId)
                                                             refreshAll()
                                                         } catch (e: Exception) {
                                                             Toast.makeText(context, "हटाया नहीं जा सका", Toast.LENGTH_SHORT).show()
@@ -360,8 +502,8 @@ fun AdminScreen(
                         }
                     }
 
-                    // Reports
-                    2 -> {
+                    // 3: Reports
+                    3 -> {
                         if (reportList.isEmpty()) {
                             EmptyStateView(
                                 title = "कोई शिकायत नहीं है",
@@ -395,7 +537,7 @@ fun AdminScreen(
                                                         onClick = {
                                                             scope.launch {
                                                                 try {
-                                                                    repository.updateReportStatus(report.id, "resolved", currentUser?.auth0UserId ?: "")
+                                                                    repository.updateReportStatus(report.id, "resolved", currentUser.auth0UserId)
                                                                     refreshAll()
                                                                     Toast.makeText(context, "रिपोर्ट हल की गई", Toast.LENGTH_SHORT).show()
                                                                 } catch (e: Exception) {
@@ -416,44 +558,7 @@ fun AdminScreen(
                         }
                     }
 
-                    // Expired Bhandaras
-                    3 -> {
-                        if (expiredList.isEmpty()) {
-                            EmptyStateView(
-                                title = "कोई समाप्त भंडारा नहीं मिला",
-                                description = "पुराने भंडारे यहाँ इतिहास में सुरक्षित रहते हैं।"
-                            )
-                        } else {
-                            LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                items(expiredList) { item ->
-                                    Card(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                                    ) {
-                                        Column(modifier = Modifier.padding(14.dp)) {
-                                            Row(
-                                                modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween
-                                            ) {
-                                                Text(text = item.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                                Text(text = "समाप्त", style = MaterialTheme.typography.labelSmall, color = StatusExpired)
-                                            }
-                                            Spacer(modifier = Modifier.height(4.dp))
-                                            Text(text = "दिनांक: ${item.date} | शहर: ${item.getCityDisplayName()}", style = MaterialTheme.typography.bodySmall)
-                                            Text(text = "स्थान: ${item.area}", style = MaterialTheme.typography.bodySmall)
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // App Update Management
+                    // 4: App Update Management
                     4 -> {
                         val installedCode = AppUpdateManager.getInstalledVersionCode(context)
                         val installedName = AppUpdateManager.getInstalledVersionName(context)
@@ -531,7 +636,7 @@ fun AdminScreen(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
 
-                                    Divider()
+                                    HorizontalDivider()
 
                                     // Latest Version Code
                                     OutlinedTextField(
@@ -716,9 +821,9 @@ fun AdminScreen(
                                         city = newMemeCity,
                                         active = true,
                                         isActive = true,
-                                        createdBy = currentUser?.name ?: "व्यवस्थापक"
+                                        createdBy = currentUser.name
                                     )
-                                    repository.addMeme(meme, currentUser?.auth0UserId)
+                                    repository.addMeme(meme, currentUser.auth0UserId)
                                     showAddMemeDialog = false
                                     newMemeText = ""
                                     refreshAll()
@@ -749,5 +854,17 @@ fun AdminScreen(
             currentVersionName = AppUpdateManager.getInstalledVersionName(context),
             onDismiss = { showUpdatePreviewDialog = false }
         )
+    }
+}
+
+private fun formatTimestamp(millis: Long): String {
+    if (millis <= 0L) return "हाल ही में"
+    return try {
+        val sdf = SimpleDateFormat("dd MMM, hh:mm a", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("Asia/Kolkata")
+        }
+        sdf.format(Date(millis))
+    } catch (_: Exception) {
+        "हाल ही में"
     }
 }

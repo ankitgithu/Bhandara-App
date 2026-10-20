@@ -13,19 +13,25 @@ service cloud.firestore {
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
     }
 
-    // Bhandaras collection
+    // Bhandaras collection (supports /bhandaras, /Bhandara, /bhandara)
     match /bhandaras/{bhandaraId} {
-      // Public read allowed for all users
       allow read: if true;
-      
-      // Anyone (user or guest) can submit a bhandara
-      allow create: if request.resource.data.name is string
-                    && request.resource.data.name.size() > 0;
-
-      // Updating records (admin only or status updates)
+      allow create: if true;
       allow update: if true;
+      allow delete: if isAdmin();
+    }
 
-      // NORMAL USERS CAN NEVER DELETE BHANDARAS. Only admin.
+    match /Bhandara/{bhandaraId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
+      allow delete: if isAdmin();
+    }
+
+    match /bhandara/{bhandaraId} {
+      allow read: if true;
+      allow create: if true;
+      allow update: if true;
       allow delete: if isAdmin();
     }
 

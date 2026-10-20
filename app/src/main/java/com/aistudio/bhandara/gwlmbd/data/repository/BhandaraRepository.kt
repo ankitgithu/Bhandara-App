@@ -7,13 +7,19 @@ import com.aistudio.bhandara.gwlmbd.data.model.Bhandara
 import com.aistudio.bhandara.gwlmbd.data.model.Meme
 import com.aistudio.bhandara.gwlmbd.data.model.Report
 import com.aistudio.bhandara.gwlmbd.data.model.SavedBhandara
+import com.google.firebase.Timestamp
+import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 
 class BhandaraRepository {
     private val tag = "BhandaraRepo"
@@ -38,42 +44,159 @@ class BhandaraRepository {
     )
 
     // ==========================================
-    // PUBLIC BHANDARA QUERIES (Approved & Active)
+    // BACKWARD-COMPATIBLE FIELD MAPPER
     // ==========================================
 
+    /**
+     * Converts a Firestore document into a Bhandara object safely supporting multiple schema variations.
+     */
+    fun fromDocument(doc: DocumentSnapshot): Bhandara {
+        val data = doc.data ?: return doc.toObject(Bhandara::class.java)?.copy(id = doc.id) ?: Bhandara(id = doc.id)
+
+        val name = (data["name"] ?: data["bhandaraName"] ?: data["title"] ?: "").toString()
+        val city = (data["city"] ?: data["district"] ?: data["cityDisplayName"] ?: "gwalior").toString()
+        val area = (data["area"] ?: data["location"] ?: "").toString()
+        val landmark = (data["landmark"] ?: "").toString()
+        val description = (data["description"] ?: data["details"] ?: "").toString()
+        val address = (data["address"] ?: data["fullAddress"] ?: "").toString()
+
+        val latitude = when (val lat = data["latitude"] ?: data["lat"]) {
+            is Number -> lat.toDouble()
+            is String -> lat.toDoubleOrNull() ?: 0.0
+            else -> 0.0
+        }
+        val longitude = when (val lng = data["longitude"] ?: data["lng"] ?: data["lon"]) {
+            is Number -> lng.toDouble()
+            is String -> lng.toDoubleOrNull() ?: 0.0
+            else -> 0.0
+        }
+
+        val mapsUrl = (data["mapsUrl"] ?: "").toString()
+        val date = (data["date"] ?: data["eventDate"] ?: "").toString()
+        val startTime = (data["startTime"] ?: data["time"] ?: "").toString()
+        val endTime = (data["endTime"] ?: "").toString()
+
+        val startDateTime = parseTimestamp(data["startDateTime"])
+        val endDateTime = parseTimestamp(data["endDateTime"])
+        val createdAt = parseTimestamp(data["createdAt"])
+        val updatedAt = parseTimestamp(data["updatedAt"])
+
+        val contactName = (data["contactName"] ?: data["organizerName"] ?: "").toString()
+        val contactPhone = (data["contactPhone"] ?: data["phone"] ?: data["mobile"] ?: "").toString()
+        val createdBy = (data["createdBy"] ?: "अनाम भक्त").toString()
+        val createdByAuth0Id = (data["createdByAuth0Id"] ?: "").toString()
+
+        val status = (data["status"] ?: "active").toString()
+        val approvalStatus = (data["approvalStatus"] ?: if (data["approved"] == false) "pending" else "approved").toString()
+
+        return Bhandara(
+            id = doc.id,
+            name = name,
+            city = city,
+            area = area,
+            landmark = landmark,
+            description = description,
+            address = address,
+            latitude = latitude,
+            longitude = longitude,
+            mapsUrl = mapsUrl,
+            date = date,
+            startTime = startTime,
+            endTime = endTime,
+            startDateTime = startDateTime,
+            endDateTime = endDateTime,
+            contactName = contactName,
+            contactPhone = contactPhone,
+            createdBy = createdBy,
+            createdByAuth0Id = createdByAuth0Id,
+            createdAt = if (createdAt > 0L) createdAt else System.currentTimeMillis(),
+            updatedAt = if (updatedAt > 0L) updatedAt else System.currentTimeMillis(),
+            approvalStatus = approvalStatus,
+            status = status
+        )
+    }
+
+    private fun parseTimestamp(raw: Any?): Long {
+        return when (raw) {
+            is Number -> raw.toLong()
+            is Timestamp -> raw.toDate().time
+            is String -> raw.toLongOrNull() ?: 0L
+            else -> 0L
+        }
+    }
+
+    // ==========================================
+    // PUBLIC BHANDARA QUERIES (Safe & Resilient)
+    // ==========================================
+
+    /**
+     * Retrieves all active Bhandaras for public display.
+     * Guaranteed NO composite index requirement and backward-compatible with all documents.
+     */
     suspend fun getActiveBhandaras(city: String): List<Bhandara> {
         return try {
-            val query = firestore.collection("bhandaras")
-                .whereEqualTo("approvalStatus", "approved")
-                .whereEqualTo("status", "active")
-                .orderBy("createdAt", Query.Direction.DESCENDING)
+            val snapshot = firestore.collection("bhandaras").get().await()
+            val allDocs = snapshot.documents.map { doc -> fromDocument(doc) }
 
-            val snapshot = query.get().await()
-            val list = snapshot.documents.mapNotNull { doc ->
-                doc.toObject(Bhandara::class.java)?.copy(id = doc.id)
-            }.filter { bhandara ->
-                val matchesCity = if (city.isBlank() || city.equals("all", ignoreCase = true)) true
-                else bhandara.city.equals(city, ignoreCase = true) || bhandara.getCityDisplayName().equals(city, ignoreCase = true)
-
-                matchesCity && !bhandara.isExpired()
+            val activeList = allDocs.filter { bhandara ->
+                val isRejected = bhandara.approvalStatus.equals("rejected", ignoreCase = true)
+                val isArchived = bhandara.status.equals("expired", ignoreCase = true) ||
+                                 bhandara.status.equals("deleted", ignoreCase = true) ||
+                                 bhandara.status.equals("archived", ignoreCase = true)
+                !isRejected && !isArchived && !bhandara.isExpired()
             }
 
+            val expiredList = allDocs.filter { it.isExpired() }
+            val filteredList = activeList.filter { it.matchesCity(city) }
+                .sortedByDescending { if (it.createdAt > 0L) it.createdAt else it.startDateTime }
+
+            // Development Debug Logging (as specified in requirements)
+            val projectId = try { firestore.app.options.projectId } catch (_: Exception) { "bhandara-2f5ce" }
+            Log.d("BhandaraDebug", "Firebase project: $projectId")
+            Log.d("BhandaraDebug", "Bhandara collection: /bhandaras")
+            Log.d("BhandaraDebug", "Documents fetched: ${allDocs.size} (IDs: ${allDocs.map { it.id }})")
+            Log.d("BhandaraDebug", "Active Bhandaras: ${activeList.size}")
+            Log.d("BhandaraDebug", "Expired Bhandaras: ${expiredList.size}")
+            Log.d("BhandaraDebug", "District filter: '$city' -> Matched: ${filteredList.size}")
+
             cachedBhandaras.clear()
-            cachedBhandaras.addAll(list)
-            list
+            cachedBhandaras.addAll(filteredList)
+            filteredList
         } catch (e: Exception) {
             Log.e(tag, "getActiveBhandaras error: ${e.message}", e)
-            // Return cached data if offline
             if (cachedBhandaras.isNotEmpty()) {
-                cachedBhandaras.filter { bhandara ->
-                    val matchesCity = if (city.isBlank() || city.equals("all", ignoreCase = true)) true
-                    else bhandara.city.equals(city, ignoreCase = true)
-                    matchesCity && !bhandara.isExpired()
-                }
+                cachedBhandaras.filter { it.matchesCity(city) && !it.isExpired() }
             } else {
                 emptyList()
             }
         }
+    }
+
+    /**
+     * Realtime flow listener for active Bhandaras.
+     */
+    fun listenToActiveBhandaras(city: String): Flow<List<Bhandara>> = callbackFlow {
+        val listener = firestore.collection("bhandaras")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(tag, "listenToActiveBhandaras error: ${error.message}", error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val allDocs = snapshot.documents.map { doc -> fromDocument(doc) }
+                    val activeList = allDocs.filter { bhandara ->
+                        val isRejected = bhandara.approvalStatus.equals("rejected", ignoreCase = true)
+                        val isArchived = bhandara.status.equals("expired", ignoreCase = true) ||
+                                         bhandara.status.equals("deleted", ignoreCase = true)
+                        !isRejected && !isArchived && !bhandara.isExpired() && bhandara.matchesCity(city)
+                    }.sortedByDescending { if (it.createdAt > 0L) it.createdAt else it.startDateTime }
+
+                    cachedBhandaras.clear()
+                    cachedBhandaras.addAll(activeList)
+                    trySend(activeList)
+                }
+            }
+        awaitClose { listener.remove() }
     }
 
     suspend fun getTodayBhandaras(city: String): List<Bhandara> {
@@ -110,7 +233,11 @@ class BhandaraRepository {
     suspend fun getBhandaraById(id: String): Bhandara? {
         return try {
             val doc = firestore.collection("bhandaras").document(id).get().await()
-            doc.toObject(Bhandara::class.java)?.copy(id = doc.id)
+            if (doc.exists()) {
+                fromDocument(doc)
+            } else {
+                cachedBhandaras.find { it.id == id }
+            }
         } catch (e: Exception) {
             Log.e(tag, "getBhandaraById error: ${e.message}")
             cachedBhandaras.find { it.id == id }
@@ -122,10 +249,15 @@ class BhandaraRepository {
     // ==========================================
 
     suspend fun addBhandara(bhandara: Bhandara): String {
-        // Direct publication: new submissions are approved immediately for all users!
+        // Direct publication: new submissions are approved and active immediately for all users!
+        val startMillis = if (bhandara.startDateTime > 0L) bhandara.startDateTime else System.currentTimeMillis()
+        val endMillis = if (bhandara.endDateTime > 0L) bhandara.endDateTime else Bhandara.parseEventEndMillis(bhandara.date, bhandara.endTime)
+
         val submission = bhandara.copy(
             approvalStatus = "approved",
             status = "active",
+            startDateTime = startMillis,
+            endDateTime = endMillis,
             createdAt = if (bhandara.createdAt > 0L) bhandara.createdAt else System.currentTimeMillis(),
             updatedAt = System.currentTimeMillis()
         )
@@ -145,13 +277,10 @@ class BhandaraRepository {
 
     suspend fun getUserSubmittedBhandaras(auth0UserId: String): List<Bhandara> {
         return try {
-            val snapshot = firestore.collection("bhandaras")
-                .whereEqualTo("createdByAuth0Id", auth0UserId)
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .get()
-                .await()
-
-            snapshot.documents.mapNotNull { it.toObject(Bhandara::class.java)?.copy(id = it.id) }
+            val snapshot = firestore.collection("bhandaras").get().await()
+            snapshot.documents.map { fromDocument(it) }
+                .filter { it.createdByAuth0Id == auth0UserId }
+                .sortedByDescending { it.createdAt }
         } catch (e: Exception) {
             Log.e(tag, "getUserSubmittedBhandaras error: ${e.message}")
             emptyList()
@@ -242,10 +371,10 @@ class BhandaraRepository {
         return try {
             val snapshot = firestore.collection("reports")
                 .whereEqualTo("reportedBy", reportedBy)
-                .orderBy("createdAt", Query.Direction.DESCENDING)
                 .get()
                 .await()
             snapshot.documents.mapNotNull { it.toObject(Report::class.java)?.copy(id = it.id) }
+                .sortedByDescending { it.createdAt }
         } catch (e: Exception) {
             emptyList()
         }
@@ -295,33 +424,54 @@ class BhandaraRepository {
     // ADMIN FUNCTIONS (SECURE & SAFE)
     // ==========================================
 
-    suspend fun getPendingBhandaras(): List<Bhandara> {
+    /**
+     * Returns all active Bhandaras in Firestore for Admin Panel.
+     * Shows all 4 existing records without accidental filtering!
+     */
+    suspend fun getAllActiveBhandarasForAdmin(): List<Bhandara> {
         return try {
-            val snapshot = firestore.collection("bhandaras")
-                .whereEqualTo("approvalStatus", "pending")
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .get()
-                .await()
-            snapshot.documents.mapNotNull { it.toObject(Bhandara::class.java)?.copy(id = it.id) }
+            val snapshot = firestore.collection("bhandaras").get().await()
+            val allDocs = snapshot.documents.map { fromDocument(it) }
+
+            val active = allDocs.filter { bhandara ->
+                val isRejected = bhandara.approvalStatus.equals("rejected", ignoreCase = true)
+                val isArchived = bhandara.status.equals("expired", ignoreCase = true) ||
+                                 bhandara.status.equals("deleted", ignoreCase = true) ||
+                                 bhandara.status.equals("archived", ignoreCase = true)
+                !isRejected && !isArchived && !bhandara.isExpired()
+            }.sortedByDescending { if (it.createdAt > 0L) it.createdAt else it.startDateTime }
+
+            Log.d("BhandaraDebug", "getAllActiveBhandarasForAdmin: Found ${active.size} active bhandaras")
+            active
         } catch (e: Exception) {
-            Log.e(tag, "getPendingBhandaras error: ${e.message}")
+            Log.e(tag, "getAllActiveBhandarasForAdmin error: ${e.message}")
             emptyList()
         }
     }
 
-    suspend fun getExpiredBhandaras(): List<Bhandara> {
+    suspend fun getAllExpiredBhandarasForAdmin(): List<Bhandara> {
         return try {
-            val snapshot = firestore.collection("bhandaras")
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .get()
-                .await()
+            val snapshot = firestore.collection("bhandaras").get().await()
+            val allDocs = snapshot.documents.map { fromDocument(it) }
 
-            snapshot.documents.mapNotNull { doc ->
-                doc.toObject(Bhandara::class.java)?.copy(id = doc.id)
-            }.filter { it.isExpired() }
+            allDocs.filter {
+                it.isExpired() ||
+                it.status.equals("expired", ignoreCase = true) ||
+                it.status.equals("archived", ignoreCase = true)
+            }.sortedByDescending { if (it.createdAt > 0L) it.createdAt else it.startDateTime }
         } catch (e: Exception) {
+            Log.e(tag, "getAllExpiredBhandarasForAdmin error: ${e.message}")
             emptyList()
         }
+    }
+
+    // Backward compatibility for existing Admin calls
+    suspend fun getPendingBhandaras(): List<Bhandara> {
+        return getAllActiveBhandarasForAdmin()
+    }
+
+    suspend fun getExpiredBhandaras(): List<Bhandara> {
+        return getAllExpiredBhandarasForAdmin()
     }
 
     suspend fun approveBhandara(id: String, adminId: String) {
@@ -367,11 +517,9 @@ class BhandaraRepository {
 
     suspend fun getAllMemesForAdmin(): List<Meme> {
         return try {
-            val snapshot = firestore.collection("memes")
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .get()
-                .await()
+            val snapshot = firestore.collection("memes").get().await()
             val list = snapshot.documents.mapNotNull { it.toObject(Meme::class.java)?.copy(id = it.id) }
+                .sortedByDescending { it.createdAt }
             if (list.isEmpty()) defaultMemes else list
         } catch (e: Exception) {
             defaultMemes
@@ -433,11 +581,9 @@ class BhandaraRepository {
 
     suspend fun getAllReports(): List<Report> {
         return try {
-            val snapshot = firestore.collection("reports")
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .get()
-                .await()
+            val snapshot = firestore.collection("reports").get().await()
             snapshot.documents.mapNotNull { it.toObject(Report::class.java)?.copy(id = it.id) }
+                .sortedByDescending { it.createdAt }
         } catch (e: Exception) {
             emptyList()
         }
@@ -501,10 +647,11 @@ class BhandaraRepository {
     private fun isDateToday(dateStr: String): Boolean {
         if (dateStr.isBlank()) return false
         return try {
-            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-            val date = sdf.parse(dateStr) ?: return false
-            val calToday = Calendar.getInstance()
-            val calDate = Calendar.getInstance().apply { time = date }
+            val ist = TimeZone.getTimeZone("Asia/Kolkata")
+            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = ist }
+            val date = sdf.parse(dateStr.trim()) ?: return false
+            val calToday = Calendar.getInstance(ist)
+            val calDate = Calendar.getInstance(ist).apply { time = date }
 
             calToday.get(Calendar.YEAR) == calDate.get(Calendar.YEAR) &&
             calToday.get(Calendar.DAY_OF_YEAR) == calDate.get(Calendar.DAY_OF_YEAR)

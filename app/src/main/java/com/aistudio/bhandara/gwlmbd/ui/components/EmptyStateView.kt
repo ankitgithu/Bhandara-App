@@ -20,6 +20,7 @@ fun EmptyStateView(
     title: String = "अभी इधर कोई भंडारा नहीं मिला 😅",
     description: String = "थोड़ी देर बाद फिर देखें या अपने क्षेत्र में नया भंडारा जोड़ें!",
     icon: ImageVector = Icons.Default.Fastfood,
+    buttonText: String = "फिर कोशिश करें",
     onRetry: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -59,7 +60,7 @@ fun EmptyStateView(
             ) {
                 Icon(imageVector = Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
-                Text(text = "फिर कोशिश करें", style = MaterialTheme.typography.labelLarge)
+                Text(text = buttonText, style = MaterialTheme.typography.labelLarge)
             }
         }
     }
