@@ -1,0 +1,141 @@
+package com.aistudio.bhandara.gwlmbd.ui.screens.add
+
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableDoubleStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.ViewModel
+import com.aistudio.bhandara.gwlmbd.data.model.Bhandara
+import com.aistudio.bhandara.gwlmbd.data.model.User
+import com.aistudio.bhandara.gwlmbd.data.repository.BhandaraRepository
+import java.text.SimpleDateFormat
+import java.util.*
+
+class AddBhandaraViewModel : ViewModel() {
+    var name by mutableStateOf("")
+    var city by mutableStateOf("gwalior")
+    var area by mutableStateOf("")
+    var landmark by mutableStateOf("")
+    var description by mutableStateOf("")
+
+    // Date & Time
+    val defaultDateStr: String = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date())
+    var date by mutableStateOf(defaultDateStr)
+    var startTime by mutableStateOf("11:00 AM")
+    var endTime by mutableStateOf("04:00 PM")
+
+    // Contact
+    var contactName by mutableStateOf("")
+    var contactPhone by mutableStateOf("")
+
+    // Location (Optional)
+    var latitude by mutableDoubleStateOf(0.0)
+    var longitude by mutableDoubleStateOf(0.0)
+    var address by mutableStateOf("")
+
+    // UI state
+    var isSubmitting by mutableStateOf(false)
+    var showSuccessDialog by mutableStateOf(false)
+    var errorMessage by mutableStateOf<String?>(null)
+
+    fun setLocation(lat: Double, lng: Double, addr: String, areaName: String) {
+        latitude = lat
+        longitude = lng
+        address = addr
+        if (area.isBlank() && areaName.isNotBlank()) {
+            area = areaName
+        }
+    }
+
+    fun initUser(user: User?) {
+        if (contactName.isBlank() && user != null && user.name.isNotBlank()) {
+            contactName = user.name
+        }
+    }
+
+    suspend fun submit(repository: BhandaraRepository, currentUser: User?): Boolean {
+        if (name.isBlank()) {
+            errorMessage = "कृपया भंडारे का नाम दर्ज करें"
+            return false
+        }
+        if (city.isBlank()) {
+            errorMessage = "कृपया शहर चुनें"
+            return false
+        }
+        if (date.isBlank()) {
+            errorMessage = "कृपया दिनांक चुनें"
+            return false
+        }
+        if (startTime.isBlank()) {
+            errorMessage = "कृपया शुरू होने का समय चुनें"
+            return false
+        }
+
+        isSubmitting = true
+        errorMessage = null
+        try {
+            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            val parsedDate = sdf.parse(date) ?: Date()
+            val endCal = Calendar.getInstance().apply {
+                time = parsedDate
+                set(Calendar.HOUR_OF_DAY, 23)
+                set(Calendar.MINUTE, 59)
+            }
+
+            val mapsUrl = if (latitude != 0.0 && longitude != 0.0) {
+                "https://www.google.com/maps/search/?api=1&query=$latitude,$longitude"
+            } else ""
+
+            val newBhandara = Bhandara(
+                name = name.trim(),
+                city = city.trim(),
+                area = area.trim().ifBlank { if (address.isNotBlank()) address else city },
+                landmark = landmark.trim(),
+                description = description.trim(),
+                address = address.ifBlank { area },
+                latitude = latitude,
+                longitude = longitude,
+                mapsUrl = mapsUrl,
+                date = date,
+                startTime = startTime,
+                endTime = endTime,
+                startDateTime = parsedDate.time,
+                endDateTime = endCal.timeInMillis,
+                contactName = contactName.trim(),
+                contactPhone = contactPhone.trim(),
+                createdBy = if (contactName.isNotBlank()) contactName.trim() else (currentUser?.name?.ifBlank { "अनाम भक्त" } ?: "अनाम भक्त"),
+                createdByAuth0Id = currentUser?.auth0UserId ?: "",
+                approvalStatus = "approved", // Direct publication!
+                status = "active"
+            )
+
+            repository.addBhandara(newBhandara)
+            isSubmitting = false
+            showSuccessDialog = true
+            return true
+        } catch (e: Exception) {
+            isSubmitting = false
+            errorMessage = "कुछ समस्या आ गई है। कृपया दोबारा कोशिश करें।"
+            return false
+        }
+    }
+
+    fun resetForm() {
+        name = ""
+        city = "gwalior"
+        area = ""
+        landmark = ""
+        description = ""
+        date = defaultDateStr
+        startTime = "11:00 AM"
+        endTime = "04:00 PM"
+        contactName = ""
+        contactPhone = ""
+        latitude = 0.0
+        longitude = 0.0
+        address = ""
+        isSubmitting = false
+        showSuccessDialog = false
+        errorMessage = null
+    }
+}

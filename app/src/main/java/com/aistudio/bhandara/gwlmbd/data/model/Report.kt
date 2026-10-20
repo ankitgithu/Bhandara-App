@@ -1,0 +1,17 @@
+package com.aistudio.bhandara.gwlmbd.data.model
+
+import com.google.firebase.firestore.DocumentId
+import com.google.firebase.firestore.IgnoreExtraProperties
+
+@IgnoreExtraProperties
+data class Report(
+    @DocumentId
+    val id: String = "",
+    val bhandaraId: String = "",
+    val bhandaraName: String = "",
+    val reportedBy: String = "",
+    val reason: String = "", // गलत Location, गलत Date, गलत Time, Contact गलत है, भंडारा समाप्त हो चुका है, अन्य
+    val description: String = "",
+    val createdAt: Long = System.currentTimeMillis(),
+    val status: String = "pending" // pending, reviewed, resolved
+)

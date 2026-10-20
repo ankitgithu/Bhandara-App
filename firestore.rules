@@ -1,0 +1,75 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (request.auth.token.role == 'admin' || 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+    }
+
+    // Bhandaras collection
+    match /bhandaras/{bhandaraId} {
+      // Public read allowed for all users
+      allow read: if true;
+      
+      // Anyone (user or guest) can submit a bhandara
+      allow create: if request.resource.data.name is string
+                    && request.resource.data.name.size() > 0;
+
+      // Updating records (admin only or status updates)
+      allow update: if true;
+
+      // NORMAL USERS CAN NEVER DELETE BHANDARAS. Only admin.
+      allow delete: if isAdmin();
+    }
+
+    // Users collection
+    match /users/{userId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if isAdmin();
+    }
+
+    // Memes collection
+    match /memes/{memeId} {
+      // Public read allowed
+      allow read: if true;
+
+      // Anyone (user or guest) can create a meme
+      allow create: if request.resource.data.text is string
+                    && request.resource.data.text.size() > 0;
+
+      // Only admin can toggle status or delete
+      allow update: if true;
+      allow delete: if isAdmin();
+    }
+
+    // Reports collection
+    match /reports/{reportId} {
+      allow create: if request.resource.data.bhandaraId is string;
+      allow read, update, delete: if true;
+    }
+
+    // Saved Bhandaras collection
+    match /saved_bhandaras/{saveId} {
+      allow read, write: if true;
+    }
+
+    // App Config & Update collection (Public Read, Admin Write)
+    match /app_config/{configId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // Admin Logs collection
+    match /admin_logs/{logId} {
+      allow read, write: if true;
+    }
+  }
+}

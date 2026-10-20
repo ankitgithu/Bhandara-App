@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Golden Sun Aura behind the Fort -->
+    <path
+        android:fillColor="#33FFD54F"
+        android:pathData="M54,46m-24,0a24,24 0,1 1,48 0a24,24 0,1 1,-48 0" />
+
+    <!-- Gwalior Fort Domed Turrets & Ramparts Silhouette -->
+    <!-- Left Turret & Dome -->
+    <path
+        android:fillColor="#FFE082"
+        android:pathData="M26,35 C26,30 32,26 32,26 C32,26 38,30 38,35 L38,40 L26,40 Z" />
+    <path
+        android:fillColor="#FFD54F"
+        android:pathData="M27,40 L37,40 L37,56 L27,56 Z" />
+    <!-- Center Palace Arch & Battlements -->
+    <path
+        android:fillColor="#FFF8E1"
+        android:pathData="M37,44 L71,44 L71,56 L37,56 Z" />
+    <!-- Fort Battlements Teeth -->
+    <path
+        android:fillColor="#FFD54F"
+        android:pathData="M37,41 L42,41 L42,44 L37,44 Z M46,41 L51,41 L51,44 L46,44 Z M57,41 L62,41 L62,44 L57,44 Z M66,41 L71,41 L71,44 L66,44 Z" />
+    <!-- Right Turret & Dome -->
+    <path
+        android:fillColor="#FFE082"
+        android:pathData="M70,35 C70,30 76,26 76,26 C76,26 82,30 82,35 L82,40 L70,40 Z" />
+    <path
+        android:fillColor="#FFD54F"
+        android:pathData="M71,40 L81,40 L81,56 L71,56 Z" />
+
+    <!-- Sacred Saffron Dhwaja (Flag) flying high on Fort -->
+    <path
+        android:fillColor="#FF6F00"
+        android:pathData="M54,23 L54,34 L66,28 Z" />
+    <!-- Flagpole -->
+    <path
+        android:fillColor="#FFE082"
+        android:pathData="M53,22 L55,22 L55,44 L53,44 Z" />
+
+    <!-- Sacred Kalash / Prasad Patra (Bhandara Vessel) -->
+    <!-- Bowl Base -->
+    <path
+        android:fillColor="#FFB300"
+        android:pathData="M44,57 L64,57 L60,67 L48,67 Z" />
+    <!-- Bowl Rim -->
+    <path
+        android:fillColor="#FFE082"
+        android:pathData="M42,55 C42,54 66,54 66,55 L65,58 L43,58 Z" />
+    <!-- Sacred Flame / Diya Jyoti -->
+    <path
+        android:pathData="M54,46 C50,51 51,54 54,54 C57,54 58,51 54,46 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="54"
+                android:startY="46"
+                android:endX="54"
+                android:endY="54"
+                android:type="linear">
+                <item android:color="#FFF176" android:offset="0.0" />
+                <item android:color="#FF5722" android:offset="1.0" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Banner Base for Text -->
+    <path
+        android:fillColor="#80000000"
+        android:pathData="M20,72 L88,72 C91,72 93,74 93,77 L93,89 C93,92 91,94 88,94 L20,94 C17,94 15,92 15,89 L15,77 C15,74 17,72 20,72 Z" />
+
+    <!-- Bold Devanagari Text: "भंडारा" Vector Geometry -->
+    <!-- Shirorekha (Top connecting bar for Devanagari) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M23,76 L85,76 L85,78 L23,78 Z" />
+
+    <!-- Akshar: भ (Bha) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M25,78 L28,78 L28,88 L26,88 L26,84 L24,84 L24,82 L28,82 L28,80 L25,80 Z M31,78 L33,78 L33,88 L31,88 Z M27,82 L31,82 L31,84 L27,84 Z" />
+
+    <!-- Anusvara (Dot on top): ं -->
+    <path
+        android:fillColor="#FFD54F"
+        android:pathData="M37,73 A1.5,1.5 0 1,0 37,76 A1.5,1.5 0 1,0 37,73 Z" />
+
+    <!-- Akshar: डा (Daa) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M39,78 L41,78 L41,80 L44,80 C46,80 47,81 47,83 C47,84 45,85 44,85 C46,85 47,86 47,88 L45,88 C45,86 43,86 41,86 L41,88 L39,88 Z M49,78 L51,78 L51,88 L49,88 Z" />
+
+    <!-- Akshar: रा (Raa) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M56,78 L62,78 C64,78 65,79 65,81 C65,83 63,84 61,84 L65,88 L62,88 L59,84 L59,88 L57,88 L57,78 Z M59,80 L59,82 L62,82 C63,82 63,81 63,81 C63,80 63,80 62,80 Z M68,78 L70,78 L70,88 L68,88 Z" />
+
+    <!-- Sacred Trishul & Tilak accent on the right -->
+    <path
+        android:fillColor="#FFD54F"
+        android:pathData="M78,77 L80,77 L80,87 L78,87 Z M75,79 L77,79 L77,82 L75,82 Z M81,79 L83,79 L83,82 L81,82 Z" />
+</vector>

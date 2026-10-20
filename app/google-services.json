@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "1086779076016",
+    "project_id": "bhandara-2f5ce",
+    "storage_bucket": "bhandara-2f5ce.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1086779076016:android:2566f61ccb26e48c5f7a75",
+        "android_client_info": {
+          "package_name": "com.aistudio.bhandara.gwlmbd"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1086779076016-mgq8r1p0lbbsgkph98lqfif49ob960q8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.aistudio.bhandara.gwlmbd",
+            "certificate_hash": "5dcadef26adaf30dd23d34a44483a494d65e1721"
+          }
+        },
+        {
+          "client_id": "1086779076016-actvccqc4j25lq78m94tm4024sqeq4q3.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCmvGVV9S40d5HzLvNfpyaTlyu5EQZJRr0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1086779076016-actvccqc4j25lq78m94tm4024sqeq4q3.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
