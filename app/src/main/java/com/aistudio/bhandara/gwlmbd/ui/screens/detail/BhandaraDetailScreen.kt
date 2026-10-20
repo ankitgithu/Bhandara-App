@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -186,7 +187,13 @@ fun BhandaraDetailScreen(
                     }
                 }
 
-                // Interactive Satellite Map Preview or No Location Banner
+                // Map Preview or Google Maps Link Banner
+                val mapLink = when {
+                    item.mapsUrl.isNotBlank() -> item.mapsUrl.trim()
+                    item.latitude != 0.0 && item.longitude != 0.0 -> "https://www.google.com/maps/search/?api=1&query=${item.latitude},${item.longitude}"
+                    else -> null
+                }
+
                 if (item.latitude != 0.0 && item.longitude != 0.0) {
                     val position = remember { LatLng(item.latitude, item.longitude) }
                     val cameraState = rememberCameraPositionState {
@@ -220,8 +227,16 @@ fun BhandaraDetailScreen(
                         // Open Map button overlay
                         Button(
                             onClick = {
-                                val uri = Uri.parse("geo:${item.latitude},${item.longitude}?q=${item.latitude},${item.longitude}(${Uri.encode(item.name)})")
-                                context.startActivity(Intent(Intent.ACTION_VIEW, uri))
+                                try {
+                                    val cleanUrl = if (mapLink != null && !mapLink.startsWith("http://") && !mapLink.startsWith("https://")) {
+                                        "https://$mapLink"
+                                    } else {
+                                        mapLink ?: "https://www.google.com/maps/search/?api=1&query=${item.latitude},${item.longitude}"
+                                    }
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(cleanUrl)))
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "मैप खोलने में असमर्थ", Toast.LENGTH_SHORT).show()
+                                }
                             },
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
@@ -231,41 +246,46 @@ fun BhandaraDetailScreen(
                         ) {
                             Icon(imageVector = Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Location खोलें", style = MaterialTheme.typography.labelSmall)
+                            Text("📍 Map पर देखें", style = MaterialTheme.typography.labelSmall)
                         }
                     }
-                } else {
+                } else if (item.mapsUrl.isNotBlank()) {
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .clickable {
+                                try {
+                                    val raw = item.mapsUrl.trim()
+                                    val cleanUrl = if (!raw.startsWith("http://") && !raw.startsWith("https://")) "https://$raw" else raw
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(cleanUrl)))
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "मैप खोलने में असमर्थ", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = DeepRed.copy(alpha = 0.08f))
                     ) {
                         Row(
                             modifier = Modifier.padding(14.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.LocationOff,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(24.dp)
-                            )
+                            Icon(imageVector = Icons.Default.LocationOn, contentDescription = null, tint = DeepRed, modifier = Modifier.size(24.dp))
                             Spacer(modifier = Modifier.width(10.dp))
-                            Column {
+                            Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Location उपलब्ध नहीं है",
+                                    text = "Google Maps लोकेशन उपलब्ध",
                                     style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurface
+                                    color = DeepRed
                                 )
                                 Text(
-                                    text = "आयोजक ने सटीक GPS Location नहीं जोड़ी है। नीचे दिए गए इलाके व पते के आधार पर पहुंचे।",
+                                    text = "सीधे गूगल मैप्स में नेविगेट करने हेतु टैप करें",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
+                            Icon(imageVector = Icons.Default.OpenInNew, contentDescription = null, tint = DeepRed, modifier = Modifier.size(18.dp))
                         }
                     }
                 }
@@ -402,39 +422,37 @@ fun BhandaraDetailScreen(
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    // Big Directions Button ("रास्ता देखें")
-                    Button(
-                        onClick = {
-                            val uri = if (item.latitude != 0.0 && item.longitude != 0.0) {
-                                Uri.parse("google.navigation:q=${item.latitude},${item.longitude}")
-                            } else {
-                                Uri.parse("geo:0,0?q=${Uri.encode("${item.name}, ${item.area}, ${item.city}")}")
-                            }
-                            val intent = Intent(Intent.ACTION_VIEW, uri)
-                            intent.setPackage("com.google.android.apps.maps")
-                            if (intent.resolveActivity(context.packageManager) != null) {
-                                context.startActivity(intent)
-                            } else {
-                                val webUri = Uri.parse("https://www.google.com/maps/search/?api=1&query=${item.latitude},${item.longitude}")
-                                context.startActivity(Intent(Intent.ACTION_VIEW, webUri))
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(52.dp),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = DeepRed)
-                    ) {
-                        Icon(imageVector = Icons.Default.Directions, contentDescription = null, tint = Color.White)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = if (item.latitude != 0.0 && item.longitude != 0.0) "रास्ता देखें (Google Maps)" else "इलाका खोजें (Google Maps)",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
+                    // Big Directions / Map Button ("📍 Map पर देखें")
+                    // Only shown if a location link exists; omitted safely if none exists!
+                    if (mapLink != null) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Button(
+                            onClick = {
+                                try {
+                                    val cleanUrl = if (!mapLink.startsWith("http://") && !mapLink.startsWith("https://")) {
+                                        "https://$mapLink"
+                                    } else {
+                                        mapLink
+                                    }
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(cleanUrl))
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "मैप खोलने में असमर्थ", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(52.dp),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = DeepRed)
+                        ) {
+                            Text(
+                                text = "📍 Map पर देखें",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
                     }
                 }
             }

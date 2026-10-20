@@ -34,7 +34,7 @@ fun AddBhandaraScreen(
     viewModel: AddBhandaraViewModel,
     currentUser: User?,
     onBackClick: () -> Unit,
-    onOpenMapPicker: (lat: Double, lng: Double) -> Unit,
+    onOpenMapPicker: (lat: Double, lng: Double) -> Unit = { _, _ -> },
     repository: BhandaraRepository,
     onSuccessSubmitted: () -> Unit
 ) {
@@ -118,67 +118,28 @@ fun AddBhandaraScreen(
                 }
             }
 
-            // Location Picker Section (OPTIONAL)
-            val hasLocation = viewModel.latitude != 0.0 && viewModel.longitude != 0.0
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onOpenMapPicker(viewModel.latitude, viewModel.longitude) },
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = if (hasLocation) DeepRed.copy(alpha = 0.06f) else MaterialTheme.colorScheme.surface
-                ),
-                border = androidx.compose.foundation.BorderStroke(
-                    width = 1.dp,
-                    color = if (hasLocation) DeepRed else MaterialTheme.colorScheme.outline
-                )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = if (hasLocation) Icons.Default.LocationOn else Icons.Default.AddLocationAlt,
-                                contentDescription = null,
-                                tint = if (hasLocation) DeepRed else SaffronOrange,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = if (hasLocation) "स्थान चुना गया ✓" else "नक्शे पर स्थान चुनें (वैकल्पिक)",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = if (hasLocation) DeepRed else MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        Text(
-                            text = if (viewModel.address.isNotBlank()) {
-                                viewModel.address
-                            } else if (hasLocation) {
-                                "${String.format(Locale.US, "%.5f", viewModel.latitude)}, ${String.format(Locale.US, "%.5f", viewModel.longitude)}"
-                            } else {
-                                "सटीक मैप लोकेशन हेतु टैप करें (सैटेलाइट / नक्शा)"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
+            // Google Maps Location Link (Optional)
+            OutlinedTextField(
+                value = viewModel.mapsUrl,
+                onValueChange = { viewModel.mapsUrl = it },
+                label = { Text("Google Maps Location Link") },
+                placeholder = { Text("Google Maps का location link यहाँ paste करें") },
+                supportingText = { Text("उदाहरण: https://maps.google.com/... या शेयर लिंक (वैकल्पिक)") },
+                leadingIcon = {
                     Icon(
-                        imageVector = Icons.Default.Map,
-                        contentDescription = "Open Map",
+                        imageVector = Icons.Default.Link,
+                        contentDescription = null,
                         tint = DeepRed
                     )
-                }
-            }
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = DeepRed,
+                    focusedLabelColor = DeepRed
+                )
+            )
 
             // Area / Locality
             OutlinedTextField(

@@ -2,6 +2,7 @@ package com.aistudio.bhandara.gwlmbd.ui.components
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -153,72 +154,78 @@ fun BhandaraCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
-
             // Action Buttons: Directions & Call
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                // Directions button
-                OutlinedButton(
-                    onClick = {
-                        val uri = if (bhandara.latitude != 0.0 && bhandara.longitude != 0.0) {
-                            Uri.parse("google.navigation:q=${bhandara.latitude},${bhandara.longitude}")
-                        } else {
-                            Uri.parse("geo:0,0?q=${Uri.encode("${bhandara.name}, ${bhandara.area}, ${bhandara.city}")}")
-                        }
-                        val mapIntent = Intent(Intent.ACTION_VIEW, uri)
-                        mapIntent.setPackage("com.google.android.apps.maps")
-                        if (mapIntent.resolveActivity(context.packageManager) != null) {
-                            context.startActivity(mapIntent)
-                        } else {
-                            // Fallback to browser
-                            val webUri = Uri.parse("https://www.google.com/maps/search/?api=1&query=${bhandara.latitude},${bhandara.longitude}")
-                            context.startActivity(Intent(Intent.ACTION_VIEW, webUri))
-                        }
-                    },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        contentColor = DeepRed
-                    )
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Directions,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Map पर देखें",
-                        style = MaterialTheme.typography.labelLarge
-                    )
-                }
+            val mapLink = when {
+                bhandara.mapsUrl.isNotBlank() -> bhandara.mapsUrl.trim()
+                bhandara.latitude != 0.0 && bhandara.longitude != 0.0 -> "https://www.google.com/maps/search/?api=1&query=${bhandara.latitude},${bhandara.longitude}"
+                else -> null
+            }
 
-                // Call button if contact phone exists
-                if (bhandara.contactPhone.isNotBlank()) {
-                    FilledTonalButton(
-                        onClick = {
-                            val callIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${bhandara.contactPhone}"))
-                            context.startActivity(callIntent)
-                        },
-                        shape = RoundedCornerShape(10.dp),
-                        colors = ButtonDefaults.filledTonalButtonColors(
-                            containerColor = SaffronOrange.copy(alpha = 0.15f),
-                            contentColor = SaffronOrange
-                        )
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Call,
-                            contentDescription = "Call",
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "फ़ोन",
-                            style = MaterialTheme.typography.labelLarge
-                        )
+            if (mapLink != null || bhandara.contactPhone.isNotBlank()) {
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Directions / Map button (Only shown if map link exists!)
+                    if (mapLink != null) {
+                        OutlinedButton(
+                            onClick = {
+                                try {
+                                    val cleanUrl = if (!mapLink.startsWith("http://") && !mapLink.startsWith("https://")) {
+                                        "https://$mapLink"
+                                    } else {
+                                        mapLink
+                                    }
+                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(cleanUrl))
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "मैप खोलने में असमर्थ", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = DeepRed
+                            )
+                        ) {
+                            Text(
+                                text = "📍 Map पर देखें",
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
+                    }
+
+                    // Call button if contact phone exists
+                    if (bhandara.contactPhone.isNotBlank()) {
+                        FilledTonalButton(
+                            onClick = {
+                                try {
+                                    val callIntent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:${bhandara.contactPhone}"))
+                                    context.startActivity(callIntent)
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "कॉल करने में असमर्थ", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = if (mapLink == null) Modifier.fillMaxWidth() else Modifier.wrapContentWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.filledTonalButtonColors(
+                                containerColor = SaffronOrange.copy(alpha = 0.15f),
+                                contentColor = SaffronOrange
+                            )
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Call,
+                                contentDescription = "Call",
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "फ़ोन",
+                                style = MaterialTheme.typography.labelLarge
+                            )
+                        }
                     }
                 }
             }

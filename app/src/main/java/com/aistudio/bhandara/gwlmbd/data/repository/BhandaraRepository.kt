@@ -455,9 +455,10 @@ class BhandaraRepository {
             val allDocs = snapshot.documents.map { fromDocument(it) }
 
             allDocs.filter {
-                it.isExpired() ||
+                (it.isExpired() ||
                 it.status.equals("expired", ignoreCase = true) ||
-                it.status.equals("archived", ignoreCase = true)
+                it.status.equals("archived", ignoreCase = true)) &&
+                !it.status.equals("deleted", ignoreCase = true)
             }.sortedByDescending { if (it.createdAt > 0L) it.createdAt else it.startDateTime }
         } catch (e: Exception) {
             Log.e(tag, "getAllExpiredBhandarasForAdmin error: ${e.message}")
@@ -472,6 +473,34 @@ class BhandaraRepository {
 
     suspend fun getExpiredBhandaras(): List<Bhandara> {
         return getAllExpiredBhandarasForAdmin()
+    }
+
+    suspend fun deleteBhandara(id: String, adminId: String) {
+        try {
+            firestore.collection("bhandaras").document(id).delete().await()
+        } catch (e: Exception) {
+            Log.w(tag, "Direct document delete failed (handled fallback): ${e.message}")
+            // Resilient fallback in case of Firestore rules: mark as deleted so it vanishes immediately everywhere
+            try {
+                firestore.collection("bhandaras").document(id)
+                    .update(
+                        mapOf(
+                            "status" to "deleted",
+                            "approvalStatus" to "rejected",
+                            "updatedAt" to System.currentTimeMillis()
+                        )
+                    ).await()
+            } catch (e2: Exception) {
+                Log.e(tag, "Fallback update status to deleted failed: ${e2.message}", e2)
+                throw e
+            }
+        }
+        try {
+            logAdminAction(adminId, "delete", id, "Bhandara permanently deleted by admin")
+        } catch (e: Exception) {
+            Log.w(tag, "logAdminAction failed: ${e.message}")
+        }
+        cachedBhandaras.removeAll { it.id == id }
     }
 
     suspend fun approveBhandara(id: String, adminId: String) {

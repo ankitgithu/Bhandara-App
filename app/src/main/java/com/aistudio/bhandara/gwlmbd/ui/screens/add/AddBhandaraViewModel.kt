@@ -28,7 +28,10 @@ class AddBhandaraViewModel : ViewModel() {
     var contactName by mutableStateOf("")
     var contactPhone by mutableStateOf("")
 
-    // Location (Optional)
+    // Google Maps Location Link (Optional)
+    var mapsUrl by mutableStateOf("")
+
+    // Coordinates (Optional / Fallback)
     var latitude by mutableDoubleStateOf(0.0)
     var longitude by mutableDoubleStateOf(0.0)
     var address by mutableStateOf("")
@@ -42,6 +45,9 @@ class AddBhandaraViewModel : ViewModel() {
         latitude = lat
         longitude = lng
         address = addr
+        if (mapsUrl.isBlank()) {
+            mapsUrl = "https://www.google.com/maps/search/?api=1&query=$lat,$lng"
+        }
         if (area.isBlank() && areaName.isNotBlank()) {
             area = areaName
         }
@@ -80,9 +86,11 @@ class AddBhandaraViewModel : ViewModel() {
             val startMillis = parsedDate.time
             val endMillis = Bhandara.parseEventEndMillis(date, endTime)
 
-            val mapsUrl = if (latitude != 0.0 && longitude != 0.0) {
-                "https://www.google.com/maps/search/?api=1&query=$latitude,$longitude"
-            } else ""
+            val resolvedMapsUrl = when {
+                mapsUrl.isNotBlank() -> mapsUrl.trim()
+                latitude != 0.0 && longitude != 0.0 -> "https://www.google.com/maps/search/?api=1&query=$latitude,$longitude"
+                else -> ""
+            }
 
             val newBhandara = Bhandara(
                 name = name.trim(),
@@ -93,7 +101,7 @@ class AddBhandaraViewModel : ViewModel() {
                 address = address.ifBlank { area },
                 latitude = latitude,
                 longitude = longitude,
-                mapsUrl = mapsUrl,
+                mapsUrl = resolvedMapsUrl,
                 date = date,
                 startTime = startTime,
                 endTime = endTime,
@@ -129,6 +137,7 @@ class AddBhandaraViewModel : ViewModel() {
         endTime = "04:00 PM"
         contactName = ""
         contactPhone = ""
+        mapsUrl = ""
         latitude = 0.0
         longitude = 0.0
         address = ""

@@ -83,6 +83,7 @@ fun AdminScreen(
     var isLoading by remember { mutableStateOf(false) }
     var isSavingConfig by remember { mutableStateOf(false) }
     var showUpdatePreviewDialog by remember { mutableStateOf(false) }
+    var bhandaraToDelete by remember { mutableStateOf<Bhandara?>(null) }
 
     var showAddMemeDialog by remember { mutableStateOf(false) }
     var newMemeText by remember { mutableStateOf("") }
@@ -335,25 +336,31 @@ fun AdminScreen(
 
                                             Row(
                                                 modifier = Modifier.fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                verticalAlignment = Alignment.CenterVertically
                                             ) {
-                                                // Map Button
-                                                OutlinedButton(
-                                                    onClick = {
-                                                        val uri = if (item.latitude != 0.0 && item.longitude != 0.0) {
-                                                            Uri.parse("https://www.google.com/maps/search/?api=1&query=${item.latitude},${item.longitude}")
-                                                        } else {
-                                                            Uri.parse("https://www.google.com/maps/search/?api=1&query=${Uri.encode("${item.name}, ${item.area}, ${item.city}")}")
-                                                        }
-                                                        val mapIntent = Intent(Intent.ACTION_VIEW, uri)
-                                                        context.startActivity(mapIntent)
-                                                    },
-                                                    modifier = Modifier.weight(1f),
-                                                    shape = RoundedCornerShape(8.dp)
-                                                ) {
-                                                    Icon(imageVector = Icons.Default.LocationOn, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                    Spacer(modifier = Modifier.width(4.dp))
-                                                    Text("Map पर देखें", style = MaterialTheme.typography.labelMedium)
+                                                // Map Button (Only shown if map link exists!)
+                                                val mapLink = when {
+                                                    item.mapsUrl.isNotBlank() -> item.mapsUrl.trim()
+                                                    item.latitude != 0.0 && item.longitude != 0.0 -> "https://www.google.com/maps/search/?api=1&query=${item.latitude},${item.longitude}"
+                                                    else -> null
+                                                }
+                                                if (mapLink != null) {
+                                                    OutlinedButton(
+                                                        onClick = {
+                                                            try {
+                                                                val cleanUrl = if (!mapLink.startsWith("http://") && !mapLink.startsWith("https://")) "https://$mapLink" else mapLink
+                                                                val mapIntent = Intent(Intent.ACTION_VIEW, Uri.parse(cleanUrl))
+                                                                context.startActivity(mapIntent)
+                                                            } catch (e: Exception) {
+                                                                Toast.makeText(context, "मैप खोलने में असमर्थ", Toast.LENGTH_SHORT).show()
+                                                            }
+                                                        },
+                                                        modifier = Modifier.weight(1f),
+                                                        shape = RoundedCornerShape(8.dp)
+                                                    ) {
+                                                        Text("📍 Map पर देखें", style = MaterialTheme.typography.labelMedium)
+                                                    }
                                                 }
 
                                                 // Call Button
@@ -386,6 +393,18 @@ fun AdminScreen(
                                                     shape = RoundedCornerShape(8.dp)
                                                 ) {
                                                     Text("समाप्त करें", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelMedium)
+                                                }
+
+                                                // Admin Delete Button
+                                                OutlinedButton(
+                                                    onClick = { bhandaraToDelete = item },
+                                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = StatusRejected),
+                                                    border = androidx.compose.foundation.BorderStroke(1.dp, StatusRejected.copy(alpha = 0.5f)),
+                                                    shape = RoundedCornerShape(8.dp)
+                                                ) {
+                                                    Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(16.dp))
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("हटाएं", style = MaterialTheme.typography.labelMedium)
                                                 }
                                             }
                                         }
@@ -434,6 +453,23 @@ fun AdminScreen(
                                             Spacer(modifier = Modifier.height(4.dp))
                                             Text(text = "दिनांक: ${item.date} | शहर: ${item.getCityDisplayName()}", style = MaterialTheme.typography.bodySmall)
                                             Text(text = "स्थान: ${item.area}", style = MaterialTheme.typography.bodySmall)
+
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.End
+                                            ) {
+                                                OutlinedButton(
+                                                    onClick = { bhandaraToDelete = item },
+                                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = StatusRejected),
+                                                    border = androidx.compose.foundation.BorderStroke(1.dp, StatusRejected.copy(alpha = 0.5f)),
+                                                    shape = RoundedCornerShape(8.dp)
+                                                ) {
+                                                    Icon(imageVector = Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(16.dp))
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("हटाएं", style = MaterialTheme.typography.labelMedium)
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -853,6 +889,59 @@ fun AdminScreen(
             config = appUpdateConfig,
             currentVersionName = AppUpdateManager.getInstalledVersionName(context),
             onDismiss = { showUpdatePreviewDialog = false }
+        )
+    }
+
+    // Delete Bhandara Confirmation Dialog
+    if (bhandaraToDelete != null) {
+        val target = bhandaraToDelete!!
+        AlertDialog(
+            onDismissRequest = { bhandaraToDelete = null },
+            title = {
+                Text(
+                    text = "क्या आप इस भंडारे को हटाना चाहते हैं?",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "\"${target.name.ifBlank { "यह भंडारा" }}\" को डेटाबेस से स्थायी रूप से हटा दिया जाएगा।",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val toDelete = target
+                        bhandaraToDelete = null
+                        scope.launch {
+                            try {
+                                // Immediately remove from active & expired lists in memory
+                                activeList = activeList.filter { it.id != toDelete.id }
+                                expiredList = expiredList.filter { it.id != toDelete.id }
+
+                                repository.deleteBhandara(toDelete.id, currentUser.auth0UserId)
+                                Toast.makeText(context, "भंडारा सफलतापूर्वक हटा दिया गया।", Toast.LENGTH_SHORT).show()
+                                refreshAll()
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "हटाने में समस्या आई: ${e.message}", Toast.LENGTH_SHORT).show()
+                                refreshAll()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = StatusRejected)
+                ) {
+                    Text("हटाएं", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { bhandaraToDelete = null }
+                ) {
+                    Text("रद्द करें")
+                }
+            }
         )
     }
 }
