@@ -1,5 +1,10 @@
 package com.aistudio.bhandara.gwlmbd.ui.screens.home
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -34,16 +39,16 @@ fun HomeScreen(
     onSearchClick: () -> Unit,
     onBhandaraClick: (String) -> Unit,
     onAddBhandaraClick: () -> Unit,
-    onAddMemeClick: () -> Unit = {},
+    onAddMemeClick: (() -> Unit)? = null,
     isGuest: Boolean,
     repository: BhandaraRepository,
     currentTheme: String = "system",
     onThemeToggle: () -> Unit = {}
 ) {
     val scope = rememberCoroutineScope()
-    var bhandaras by remember { mutableStateOf<List<Bhandara>>(emptyList()) }
+    var bhandaras by remember { mutableStateOf<List<Bhandara>>(repository.getCachedBhandarasForCity(selectedCity)) }
     var memes by remember { mutableStateOf<List<Meme>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
+    var isLoading by remember { mutableStateOf(bhandaras.isEmpty()) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var selectedTab by remember { mutableIntStateOf(0) }
     var showLoginPrompt by remember { mutableStateOf(false) }
@@ -59,13 +64,22 @@ fun HomeScreen(
 
     fun loadData() {
         scope.launch {
-            isLoading = true
+            val cached = repository.getCachedBhandarasForCity(selectedCity)
+            if (cached.isNotEmpty()) {
+                bhandaras = cached
+                isLoading = false
+            } else if (bhandaras.isEmpty()) {
+                isLoading = true
+            }
             errorMessage = null
             try {
-                bhandaras = repository.getActiveBhandaras(selectedCity)
+                val fetched = repository.getActiveBhandaras(selectedCity)
+                bhandaras = fetched
                 memes = repository.getMemes(selectedCity)
             } catch (e: Exception) {
-                errorMessage = "भंडारे की जानकारी लोड नहीं हो पाई।"
+                if (bhandaras.isEmpty()) {
+                    errorMessage = "भंडारे की जानकारी लोड नहीं हो पाई।"
+                }
             } finally {
                 isLoading = false
             }
@@ -73,7 +87,13 @@ fun HomeScreen(
     }
 
     LaunchedEffect(selectedCity) {
-        loadData()
+        val cached = repository.getCachedBhandarasForCity(selectedCity)
+        if (cached.isNotEmpty()) {
+            bhandaras = cached
+            isLoading = false
+        } else if (bhandaras.isEmpty()) {
+            isLoading = true
+        }
         try {
             repository.listenToActiveBhandaras(selectedCity).collect { updatedList ->
                 bhandaras = updatedList
@@ -276,10 +296,10 @@ fun HomeScreen(
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Local Meme Banner with Add Meme Action
+                    // Local Meme Banner (Memes can only be added by Admin via Admin Panel)
                     MemeBanner(
                         memes = memes,
-                        onAddMemeClick = onAddMemeClick
+                        onAddMemeClick = null
                     )
                 }
             }
@@ -314,8 +334,8 @@ fun HomeScreen(
                 }
             }
 
-            // Bhandaras List
-            if (isLoading) {
+            // Bhandaras List with Smooth City Transition
+            if (isLoading && displayedBhandaras.isEmpty()) {
                 item {
                     Box(
                         modifier = Modifier
@@ -326,7 +346,7 @@ fun HomeScreen(
                         CircularProgressIndicator(color = DeepRed)
                     }
                 }
-            } else if (errorMessage != null) {
+            } else if (errorMessage != null && displayedBhandaras.isEmpty()) {
                 item {
                     EmptyStateView(
                         title = "भंडारे की जानकारी लोड नहीं हो पाई।",
@@ -335,21 +355,37 @@ fun HomeScreen(
                         onRetry = { loadData() }
                     )
                 }
-            } else if (displayedBhandaras.isEmpty()) {
-                item {
-                    EmptyStateView(
-                        title = "अभी इधर कोई भंडारा नहीं मिला 😋",
-                        description = "अपने इलाके में कोई भंडारा होने वाला है तो नीचे दिए 'भंडारा जोड़ें +' बटन से जोड़ें!",
-                        onRetry = { loadData() }
-                    )
-                }
             } else {
-                items(displayedBhandaras) { bhandara ->
-                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
-                        BhandaraCard(
-                            bhandara = bhandara,
-                            onClick = { onBhandaraClick(bhandara.id) }
-                        )
+                item {
+                    AnimatedContent(
+                        targetState = Pair(selectedCity, displayedBhandaras),
+                        transitionSpec = {
+                            fadeIn(animationSpec = tween(durationMillis = 250)) togetherWith
+                            fadeOut(animationSpec = tween(durationMillis = 150))
+                        },
+                        label = "CitySwitchContent"
+                    ) { (_, currentDisplayed) ->
+                        if (currentDisplayed.isEmpty()) {
+                            EmptyStateView(
+                                title = "अभी इधर कोई भंडारा नहीं मिला 😋",
+                                description = "अपने इलाके में कोई भंडारा होने वाला है तो नीचे दिए 'भंडारा जोड़ें +' बटन से जोड़ें!",
+                                onRetry = { loadData() }
+                            )
+                        } else {
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                currentDisplayed.forEach { bhandara ->
+                                    Box(modifier = Modifier.padding(horizontal = 16.dp)) {
+                                        BhandaraCard(
+                                            bhandara = bhandara,
+                                            onClick = { onBhandaraClick(bhandara.id) }
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

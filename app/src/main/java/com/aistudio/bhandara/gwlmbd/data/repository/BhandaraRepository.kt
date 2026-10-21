@@ -27,7 +27,13 @@ class BhandaraRepository {
 
     // In-memory cache for offline resiliency
     private val cachedBhandaras = mutableListOf<Bhandara>()
+    private val cachedAllActiveBhandaras = mutableListOf<Bhandara>()
     private val cachedMemes = mutableListOf<Meme>()
+
+    fun getCachedBhandarasForCity(city: String): List<Bhandara> {
+        return cachedAllActiveBhandaras.filter { it.matchesCity(city) && !it.isExpired() }
+            .sortedByDescending { if (it.createdAt > 0L) it.createdAt else it.startDateTime }
+    }
 
     // Default regional memes if Firestore has none yet
     private val defaultMemes = listOf(
@@ -159,6 +165,9 @@ class BhandaraRepository {
             Log.d("BhandaraDebug", "Expired Bhandaras: ${expiredList.size}")
             Log.d("BhandaraDebug", "District filter: '$city' -> Matched: ${filteredList.size}")
 
+            cachedAllActiveBhandaras.clear()
+            cachedAllActiveBhandaras.addAll(activeList)
+
             cachedBhandaras.clear()
             cachedBhandaras.addAll(filteredList)
             filteredList
@@ -184,12 +193,17 @@ class BhandaraRepository {
                 }
                 if (snapshot != null) {
                     val allDocs = snapshot.documents.map { doc -> fromDocument(doc) }
-                    val activeList = allDocs.filter { bhandara ->
+                    val allActive = allDocs.filter { bhandara ->
                         val isRejected = bhandara.approvalStatus.equals("rejected", ignoreCase = true)
                         val isArchived = bhandara.status.equals("expired", ignoreCase = true) ||
                                          bhandara.status.equals("deleted", ignoreCase = true)
-                        !isRejected && !isArchived && !bhandara.isExpired() && bhandara.matchesCity(city)
-                    }.sortedByDescending { if (it.createdAt > 0L) it.createdAt else it.startDateTime }
+                        !isRejected && !isArchived && !bhandara.isExpired()
+                    }
+                    cachedAllActiveBhandaras.clear()
+                    cachedAllActiveBhandaras.addAll(allActive)
+
+                    val activeList = allActive.filter { it.matchesCity(city) }
+                        .sortedByDescending { if (it.createdAt > 0L) it.createdAt else it.startDateTime }
 
                     cachedBhandaras.clear()
                     cachedBhandaras.addAll(activeList)
@@ -477,30 +491,105 @@ class BhandaraRepository {
 
     suspend fun deleteBhandara(id: String, adminId: String) {
         try {
-            firestore.collection("bhandaras").document(id).delete().await()
-        } catch (e: Exception) {
-            Log.w(tag, "Direct document delete failed (handled fallback): ${e.message}")
-            // Resilient fallback in case of Firestore rules: mark as deleted so it vanishes immediately everywhere
-            try {
-                firestore.collection("bhandaras").document(id)
-                    .update(
-                        mapOf(
-                            "status" to "deleted",
-                            "approvalStatus" to "rejected",
-                            "updatedAt" to System.currentTimeMillis()
-                        )
-                    ).await()
-            } catch (e2: Exception) {
-                Log.e(tag, "Fallback update status to deleted failed: ${e2.message}", e2)
-                throw e
+            // Ensure Firebase Auth session is active
+            val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
+            if (auth.currentUser == null) {
+                auth.signInAnonymously().await()
             }
-        }
-        try {
-            logAdminAction(adminId, "delete", id, "Bhandara permanently deleted by admin")
+            firestore.collection("bhandaras").document(id).delete().await()
+            try {
+                firestore.collection("Bhandara").document(id).delete().await()
+            } catch (_: Exception) {}
+            try {
+                firestore.collection("bhandara").document(id).delete().await()
+            } catch (_: Exception) {}
+            try {
+                logAdminAction(adminId, "delete", id, "Bhandara permanently deleted by admin")
+            } catch (e: Exception) {
+                Log.w(tag, "logAdminAction failed: ${e.message}")
+            }
         } catch (e: Exception) {
-            Log.w(tag, "logAdminAction failed: ${e.message}")
+            Log.e(tag, "deleteBhandara error: ${e.message}", e)
+            throw e
         }
         cachedBhandaras.removeAll { it.id == id }
+        cachedAllActiveBhandaras.removeAll { it.id == id }
+    }
+
+    fun listenToAllActiveBhandarasForAdmin(): Flow<List<Bhandara>> = callbackFlow {
+        val listener = firestore.collection("bhandaras")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(tag, "listenToAllActiveBhandarasForAdmin error: ${error.message}")
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val allDocs = snapshot.documents.map { fromDocument(it) }
+                    val active = allDocs.filter { bhandara ->
+                        val isRejected = bhandara.approvalStatus.equals("rejected", ignoreCase = true)
+                        val isArchived = bhandara.status.equals("expired", ignoreCase = true) ||
+                                         bhandara.status.equals("deleted", ignoreCase = true) ||
+                                         bhandara.status.equals("archived", ignoreCase = true)
+                        !isRejected && !isArchived && !bhandara.isExpired()
+                    }.sortedByDescending { if (it.createdAt > 0L) it.createdAt else it.startDateTime }
+                    trySend(active)
+                }
+            }
+        awaitClose { listener.remove() }
+    }
+
+    fun listenToAllExpiredBhandarasForAdmin(): Flow<List<Bhandara>> = callbackFlow {
+        val listener = firestore.collection("bhandaras")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(tag, "listenToAllExpiredBhandarasForAdmin error: ${error.message}")
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val allDocs = snapshot.documents.map { fromDocument(it) }
+                    val expired = allDocs.filter {
+                        (it.isExpired() ||
+                         it.status.equals("expired", ignoreCase = true) ||
+                         it.status.equals("archived", ignoreCase = true)) &&
+                        !it.status.equals("deleted", ignoreCase = true)
+                    }.sortedByDescending { if (it.createdAt > 0L) it.createdAt else it.startDateTime }
+                    trySend(expired)
+                }
+            }
+        awaitClose { listener.remove() }
+    }
+
+    fun listenToReports(): Flow<List<Report>> = callbackFlow {
+        val listener = firestore.collection("reports")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(tag, "listenToReports error: ${error.message}")
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val list = snapshot.documents.mapNotNull { doc ->
+                        doc.toObject(Report::class.java)?.copy(id = doc.id)
+                    }.sortedByDescending { it.createdAt }
+                    trySend(list)
+                }
+            }
+        awaitClose { listener.remove() }
+    }
+
+    fun listenToMemesForAdmin(): Flow<List<Meme>> = callbackFlow {
+        val listener = firestore.collection("memes")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(tag, "listenToMemesForAdmin error: ${error.message}")
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val list = snapshot.documents.mapNotNull { it.toObject(Meme::class.java)?.copy(id = it.id) }
+                        .sortedByDescending { it.createdAt }
+                    trySend(if (list.isEmpty()) defaultMemes else list)
+                }
+            }
+        awaitClose { listener.remove() }
     }
 
     suspend fun approveBhandara(id: String, adminId: String) {
@@ -556,6 +645,9 @@ class BhandaraRepository {
     }
 
     suspend fun addMeme(meme: Meme, adminId: String? = null): String {
+        if (adminId.isNullOrBlank()) {
+            throw SecurityException("मीम केवल अधिकृत व्यवस्थापक (Admin) ही जोड़ सकते हैं।")
+        }
         val submission = meme.copy(
             active = true,
             isActive = true,
@@ -563,24 +655,18 @@ class BhandaraRepository {
             updatedAt = System.currentTimeMillis()
         )
 
-        var newId = "local_${System.currentTimeMillis()}"
-        try {
-            val ref = firestore.collection("memes").add(submission).await()
-            newId = ref.id
-            if (!adminId.isNullOrBlank()) {
-                try {
-                    logAdminAction(adminId, "meme_add", ref.id, "Meme added: ${meme.text}")
-                } catch (e: Exception) {
-                    Log.w(tag, "logAdminAction failed (handled): ${e.message}")
-                }
+        val ref = firestore.collection("memes").add(submission).await()
+        if (!adminId.isNullOrBlank()) {
+            try {
+                logAdminAction(adminId, "meme_add", ref.id, "Meme added: ${meme.text}")
+            } catch (e: Exception) {
+                Log.w(tag, "logAdminAction failed (handled): ${e.message}")
             }
-        } catch (e: Exception) {
-            Log.e(tag, "Firestore addMeme error (handled): ${e.message}", e)
         }
 
-        val finalMeme = submission.copy(id = newId)
+        val finalMeme = submission.copy(id = ref.id)
         cachedMemes.add(0, finalMeme)
-        return newId
+        return ref.id
     }
 
     suspend fun toggleMeme(memeId: String, active: Boolean, adminId: String? = null) {
@@ -620,9 +706,21 @@ class BhandaraRepository {
 
     suspend fun updateReportStatus(reportId: String, status: String, adminId: String) {
         firestore.collection("reports").document(reportId)
-            .update("status", status)
+            .update(
+                mapOf(
+                    "status" to status,
+                    "updatedAt" to System.currentTimeMillis()
+                )
+            )
             .await()
-        logAdminAction(adminId, "report_update", reportId, "Report marked as $status")
+        logAdminAction(adminId, "report_update", reportId, "Report status set to $status")
+    }
+
+    suspend fun deleteReport(reportId: String, adminId: String) {
+        firestore.collection("reports").document(reportId).delete().await()
+        try {
+            logAdminAction(adminId, "report_delete", reportId, "Report deleted by admin")
+        } catch (_: Exception) {}
     }
 
     // ==========================================

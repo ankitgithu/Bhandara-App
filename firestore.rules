@@ -9,11 +9,15 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() && 
-        (request.auth.token.role == 'admin' || 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin');
+        (('role' in request.auth.token && request.auth.token.role == 'admin') || 
+         ('email' in request.auth.token && (request.auth.token.email == 'shatak1432@gmail.com' || request.auth.token.email.matches('(?i)shatak1432@gmail[.]com'))) ||
+         (exists(/databases/$(database)/documents/admins/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'admin') ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
     }
 
-    // Bhandaras collection (supports /bhandaras, /Bhandara, /bhandara)
+    // Bhandaras collection (Supports /bhandaras, /Bhandara, /bhandara)
     match /bhandaras/{bhandaraId} {
       allow read: if true;
       allow create: if true;
@@ -35,31 +39,40 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
+    // Admins Bridge collection
+    match /admins/{adminId} {
+      allow read: if isAuthenticated();
+      // Only the verified primary admin can be registered in the admins collection
+      allow create, update: if isAuthenticated() && 
+        request.auth.uid == adminId && 
+        (request.resource.data.email == 'shatak1432@gmail.com' || request.resource.data.email.matches('(?i)shatak1432@gmail[.]com')) &&
+        request.resource.data.role == 'admin';
+      allow delete: if isAdmin();
+    }
+
     // Users collection
     match /users/{userId} {
       allow read: if true;
-      allow create, update: if true;
+      // Normal users cannot elevate their role to admin
+      allow create, update: if isAuthenticated() && 
+        (request.resource.data.role != 'admin' || 
+         request.resource.data.email == 'shatak1432@gmail.com' ||
+         request.resource.data.email.matches('(?i)shatak1432@gmail[.]com') ||
+         (exists(/databases/$(database)/documents/users/$(userId)) && 
+          get(/databases/$(database)/documents/users/$(userId)).data.role == 'admin'));
       allow delete: if isAdmin();
     }
 
-    // Memes collection
+    // Memes collection (Public Read, ONLY Admin can create, update, or delete)
     match /memes/{memeId} {
-      // Public read allowed
       allow read: if true;
-
-      // Anyone (user or guest) can create a meme
-      allow create: if request.resource.data.text is string
-                    && request.resource.data.text.size() > 0;
-
-      // Only admin can toggle status or delete
-      allow update: if true;
-      allow delete: if isAdmin();
+      allow create, update, delete: if isAdmin();
     }
 
-    // Reports collection
+    // Reports collection (Users create; Admin reads, updates status, and deletes)
     match /reports/{reportId} {
       allow create: if request.resource.data.bhandaraId is string;
-      allow read, update, delete: if true;
+      allow read, update, delete: if isAdmin();
     }
 
     // Saved Bhandaras collection

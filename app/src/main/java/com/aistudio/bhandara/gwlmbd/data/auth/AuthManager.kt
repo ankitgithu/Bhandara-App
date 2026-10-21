@@ -12,6 +12,7 @@ import com.auth0.android.authentication.storage.SharedPreferencesStorage
 import com.auth0.android.callback.Callback
 import com.auth0.android.provider.WebAuthProvider
 import com.auth0.android.result.Credentials
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -39,6 +40,10 @@ class AuthManager(private val context: Context) {
         FirebaseFirestore.getInstance()
     }
 
+    private val firebaseAuth: FirebaseAuth by lazy {
+        FirebaseAuth.getInstance()
+    }
+
     private val _currentUser = MutableStateFlow<User?>(null)
     val currentUser: StateFlow<User?> = _currentUser.asStateFlow()
 
@@ -49,7 +54,26 @@ class AuthManager(private val context: Context) {
     val authError: StateFlow<String?> = _authError.asStateFlow()
 
     init {
+        CoroutineScope(Dispatchers.IO).launch {
+            ensureFirebaseAuth()
+        }
         restoreSession()
+    }
+
+    suspend fun ensureFirebaseAuth(): String? {
+        val current = firebaseAuth.currentUser
+        if (current != null) {
+            return current.uid
+        }
+        return try {
+            val res = firebaseAuth.signInAnonymously().await()
+            val uid = res.user?.uid
+            Log.d(tag, "Firebase Auth session established: $uid")
+            uid
+        } catch (e: Exception) {
+            Log.w(tag, "Firebase Auth signInAnonymously: ${e.message}")
+            null
+        }
     }
 
     fun restoreSession() {
@@ -148,6 +172,9 @@ class AuthManager(private val context: Context) {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                // Ensure Firebase Auth session is active
+                val firebaseUid = ensureFirebaseAuth()
+
                 val docRef = firestore.collection("users").document(sub)
                 val snapshot = docRef.get().await()
 
@@ -194,18 +221,50 @@ class AuthManager(private val context: Context) {
                     docRef.set(userObj).await()
                 }
 
+                // Bridge to Firebase Auth UID in Firestore for Security Rules verification
+                if (firebaseUid != null) {
+                    try {
+                        val fbUserDoc = firestore.collection("users").document(firebaseUid)
+                        fbUserDoc.set(
+                            mapOf(
+                                "auth0UserId" to sub,
+                                "name" to userObj.name,
+                                "email" to userObj.email,
+                                "role" to userObj.role,
+                                "admin" to userObj.admin,
+                                "updatedAt" to System.currentTimeMillis()
+                            )
+                        ).await()
+
+                        if (userObj.isAdmin()) {
+                            firestore.collection("admins").document(firebaseUid).set(
+                                mapOf(
+                                    "auth0UserId" to sub,
+                                    "email" to userObj.email,
+                                    "name" to userObj.name,
+                                    "role" to "admin",
+                                    "admin" to true,
+                                    "updatedAt" to System.currentTimeMillis()
+                                )
+                            ).await()
+                        }
+                    } catch (e: Exception) {
+                        Log.w(tag, "Firebase bridge sync warning: ${e.message}")
+                    }
+                }
+
                 _currentUser.value = userObj
                 _isLoading.value = false
                 onComplete?.invoke(userObj)
             } catch (e: Exception) {
                 Log.e(tag, "Error syncing user with Firestore: ${e.message}", e)
-                // Fallback local user object so app continues working
                 val fallbackUser = User(
                     auth0UserId = sub,
                     name = name,
                     email = email,
                     profilePicture = picture,
-                    role = "user"
+                    role = if (email.equals("shatak1432@gmail.com", ignoreCase = true)) "admin" else "user",
+                    admin = email.equals("shatak1432@gmail.com", ignoreCase = true)
                 )
                 _currentUser.value = fallbackUser
                 _isLoading.value = false

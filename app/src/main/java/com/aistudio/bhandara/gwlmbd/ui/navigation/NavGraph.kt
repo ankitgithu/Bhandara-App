@@ -216,13 +216,7 @@ fun BhandaraNavGraph(
                                     Log.e("NavGraph", "nav to add_bhandara failed: ${e.message}")
                                 }
                             },
-                            onAddMemeClick = {
-                                try {
-                                    navController.navigate("add_meme")
-                                } catch (e: Exception) {
-                                    Log.e("NavGraph", "nav to add_meme failed: ${e.message}")
-                                }
-                            },
+                            onAddMemeClick = null,
                             isGuest = isGuest,
                             repository = repository,
                             currentTheme = preferences.themeSetting,
@@ -357,26 +351,33 @@ fun BhandaraNavGraph(
             )
         }
 
-        // Add Meme Screen
+        // Add Meme Screen (Admin Only Guard)
         composable("add_meme") {
-            AddMemeScreen(
-                currentUser = currentUser,
-                repository = repository,
-                onBackClick = {
-                    try {
-                        navController.popBackStack()
-                    } catch (e: Exception) {
-                        Log.e("NavGraph", "popBackStack failed: ${e.message}")
-                    }
-                },
-                onMemeAddedSuccess = {
-                    try {
-                        navController.popBackStack()
-                    } catch (e: Exception) {
-                        Log.e("NavGraph", "popBackStack failed: ${e.message}")
-                    }
+            val user = currentUser
+            if (user == null || !user.isAdmin()) {
+                LaunchedEffect(Unit) {
+                    navController.popBackStack()
                 }
-            )
+            } else {
+                AddMemeScreen(
+                    currentUser = user,
+                    repository = repository,
+                    onBackClick = {
+                        try {
+                            navController.popBackStack()
+                        } catch (e: Exception) {
+                            Log.e("NavGraph", "popBackStack failed: ${e.message}")
+                        }
+                    },
+                    onMemeAddedSuccess = {
+                        try {
+                            navController.popBackStack()
+                        } catch (e: Exception) {
+                            Log.e("NavGraph", "popBackStack failed: ${e.message}")
+                        }
+                    }
+                )
+            }
         }
 
         // Dedicated Fullscreen Map Location Picker (Satellite default!)

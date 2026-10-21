@@ -502,24 +502,43 @@ fun BhandaraDetailScreen(
                 Button(
                     onClick = {
                         val b = bhandara ?: return@Button
+                        if (isReporting) return@Button
                         isReporting = true
                         scope.launch {
-                            val report = Report(
-                                bhandaraId = b.id,
-                                bhandaraName = b.name,
-                                reportedBy = currentUser?.email ?: "Guest",
-                                reason = selectedReason,
-                                description = reportDesc.trim()
-                            )
-                            repository.reportBhandara(report)
-                            isReporting = false
-                            showReportDialog = false
-                            Toast.makeText(context, "रिपोर्ट प्राप्त हुई, धन्यवाद!", Toast.LENGTH_SHORT).show()
+                            try {
+                                val report = Report(
+                                    bhandaraId = b.id,
+                                    bhandaraName = b.name,
+                                    reportedBy = currentUser?.email?.ifBlank { currentUser.name } ?: "Guest",
+                                    reporterName = currentUser?.name ?: "Guest",
+                                    reporterEmail = currentUser?.email ?: "",
+                                    city = b.city,
+                                    reason = selectedReason,
+                                    description = reportDesc.trim(),
+                                    createdAt = System.currentTimeMillis(),
+                                    status = "Pending"
+                                )
+                                repository.reportBhandara(report)
+                                isReporting = false
+                                showReportDialog = false
+                                reportDesc = ""
+                                Toast.makeText(context, "Report सफलतापूर्वक भेज दी गई।", Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                isReporting = false
+                                Toast.makeText(context, "Report भेजने में समस्या: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
                         }
                     },
+                    enabled = !isReporting,
                     colors = ButtonDefaults.buttonColors(containerColor = DeepRed)
                 ) {
-                    Text("रिपोर्ट भेजें")
+                    if (isReporting) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Report भेजी जा रही है...")
+                    } else {
+                        Text("रिपोर्ट भेजें")
+                    }
                 }
             },
             dismissButton = {

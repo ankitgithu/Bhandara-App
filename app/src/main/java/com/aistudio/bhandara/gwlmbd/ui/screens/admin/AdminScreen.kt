@@ -28,6 +28,7 @@ import com.aistudio.bhandara.gwlmbd.ui.components.EmptyStateView
 import com.aistudio.bhandara.gwlmbd.ui.theme.*
 import com.aistudio.bhandara.gwlmbd.util.AppUpdateManager
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -84,6 +85,7 @@ fun AdminScreen(
     var isSavingConfig by remember { mutableStateOf(false) }
     var showUpdatePreviewDialog by remember { mutableStateOf(false) }
     var bhandaraToDelete by remember { mutableStateOf<Bhandara?>(null) }
+    var reportToDelete by remember { mutableStateOf<Report?>(null) }
 
     var showAddMemeDialog by remember { mutableStateOf(false) }
     var newMemeText by remember { mutableStateOf("") }
@@ -110,7 +112,46 @@ fun AdminScreen(
     }
 
     LaunchedEffect(Unit) {
+        launch {
+            try {
+                val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
+                val uid = auth.currentUser?.uid ?: auth.signInAnonymously().await().user?.uid
+                if (uid != null) {
+                    val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    db.collection("admins").document(uid).set(
+                        mapOf(
+                            "auth0UserId" to currentUser.auth0UserId,
+                            "email" to currentUser.email,
+                            "name" to currentUser.name,
+                            "role" to "admin",
+                            "admin" to true,
+                            "updatedAt" to System.currentTimeMillis()
+                        )
+                    ).await()
+                }
+            } catch (_: Exception) {}
+        }
         refreshAll()
+        launch {
+            repository.listenToAllActiveBhandarasForAdmin().collect {
+                activeList = it
+            }
+        }
+        launch {
+            repository.listenToAllExpiredBhandarasForAdmin().collect {
+                expiredList = it
+            }
+        }
+        launch {
+            repository.listenToReports().collect {
+                reportList = it
+            }
+        }
+        launch {
+            repository.listenToMemesForAdmin().collect {
+                memeList = it
+            }
+        }
     }
 
     Scaffold(
@@ -549,42 +590,181 @@ fun AdminScreen(
                             LazyColumn(
                                 modifier = Modifier.fillMaxSize(),
                                 contentPadding = PaddingValues(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                items(reportList) { report ->
+                                items(reportList, key = { it.id }) { report ->
                                     Card(
                                         modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                                        shape = RoundedCornerShape(14.dp),
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                        elevation = CardDefaults.cardElevation(2.dp)
                                     ) {
-                                        Column(modifier = Modifier.padding(14.dp)) {
-                                            Text(text = "भंडारा: ${report.bhandaraName}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                            Text(text = "कारण: ${report.reason}", style = MaterialTheme.typography.bodyMedium, color = DeepRed)
-                                            if (report.description.isNotBlank()) {
-                                                Text(text = "विवरण: ${report.description}", style = MaterialTheme.typography.bodySmall)
+                                        Column(modifier = Modifier.padding(16.dp)) {
+                                            // Header: Report ID and Status Badge
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = "Report #${report.id.takeLast(6).uppercase()}",
+                                                    style = MaterialTheme.typography.labelMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+
+                                                val statusColor = when (report.status.lowercase()) {
+                                                    "resolved" -> StatusApproved
+                                                    "reviewed" -> Color(0xFF0288D1)
+                                                    else -> StatusPending
+                                                }
+                                                val statusText = when (report.status.lowercase()) {
+                                                    "resolved" -> "Resolved (हल हुआ)"
+                                                    "reviewed" -> "Reviewed (समीक्षित)"
+                                                    else -> "Pending (लंबित)"
+                                                }
+
+                                                Surface(
+                                                    shape = RoundedCornerShape(12.dp),
+                                                    color = statusColor.copy(alpha = 0.15f)
+                                                ) {
+                                                    Text(
+                                                        text = statusText,
+                                                        color = statusColor,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                                    )
+                                                }
                                             }
-                                            Text(text = "रिपोर्टकर्ता: ${report.reportedBy}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                                             Spacer(modifier = Modifier.height(8.dp))
 
-                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                if (report.status != "resolved") {
-                                                    Button(
-                                                        onClick = {
-                                                            scope.launch {
-                                                                try {
-                                                                    repository.updateReportStatus(report.id, "resolved", currentUser.auth0UserId)
-                                                                    refreshAll()
-                                                                    Toast.makeText(context, "रिपोर्ट हल की गई", Toast.LENGTH_SHORT).show()
-                                                                } catch (e: Exception) {
-                                                                    Toast.makeText(context, "कुछ समस्या आ गई", Toast.LENGTH_SHORT).show()
+                                            // Bhandara Name
+                                            Text(
+                                                text = "भंडारा: ${report.bhandaraName.ifBlank { report.bhandaraId }}",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
+
+                                            Spacer(modifier = Modifier.height(4.dp))
+
+                                            // Reason
+                                            Text(
+                                                text = "कारण: ${report.reason}",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = DeepRed
+                                            )
+
+                                            // Description if available
+                                            if (report.description.isNotBlank()) {
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = "विवरण: ${report.description}",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                            }
+
+                                            // City if available
+                                            if (report.city.isNotBlank()) {
+                                                Spacer(modifier = Modifier.height(2.dp))
+                                                Text(
+                                                    text = "शहर: ${report.city}",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+
+                                            // Reporter info
+                                            val reporterInfo = when {
+                                                report.reporterName.isNotBlank() && report.reporterEmail.isNotBlank() ->
+                                                    "${report.reporterName} (${report.reporterEmail})"
+                                                report.reporterName.isNotBlank() -> report.reporterName
+                                                report.reporterEmail.isNotBlank() -> report.reporterEmail
+                                                report.reportedBy.isNotBlank() -> report.reportedBy
+                                                else -> "अनाम यूज़र"
+                                            }
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = "रिपोर्टकर्ता: $reporterInfo",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+
+                                            // Date
+                                            Text(
+                                                text = "समय: ${formatTimestamp(report.createdAt)}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.outline
+                                            )
+
+                                            Spacer(modifier = Modifier.height(10.dp))
+                                            Divider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+                                            Spacer(modifier = Modifier.height(10.dp))
+
+                                            // Status switch chips & Delete button
+                                            Text(
+                                                text = "स्थिति बदलें (Change Status):",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Spacer(modifier = Modifier.height(6.dp))
+
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                    listOf("Pending", "Reviewed", "Resolved").forEach { statusOption ->
+                                                        val isSelected = report.status.equals(statusOption, ignoreCase = true)
+                                                        FilterChip(
+                                                            selected = isSelected,
+                                                            onClick = {
+                                                                if (!isSelected) {
+                                                                    scope.launch {
+                                                                        try {
+                                                                            repository.updateReportStatus(report.id, statusOption, currentUser.auth0UserId)
+                                                                            Toast.makeText(context, "स्थिति बदली: $statusOption", Toast.LENGTH_SHORT).show()
+                                                                        } catch (e: Exception) {
+                                                                            Toast.makeText(context, "स्थिति बदलने में त्रुटि: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                                        }
+                                                                    }
                                                                 }
-                                                            }
-                                                        },
-                                                        colors = ButtonDefaults.buttonColors(containerColor = StatusApproved)
-                                                    ) {
-                                                        Text("हल करें (Mark Resolved)")
+                                                            },
+                                                            label = {
+                                                                Text(
+                                                                    text = when (statusOption) {
+                                                                        "Pending" -> "लंबित"
+                                                                        "Reviewed" -> "समीक्षित"
+                                                                        "Resolved" -> "हल हुआ"
+                                                                        else -> statusOption
+                                                                    },
+                                                                    style = MaterialTheme.typography.labelSmall
+                                                                )
+                                                            },
+                                                            colors = FilterChipDefaults.filterChipColors(
+                                                                selectedContainerColor = when (statusOption) {
+                                                                    "Resolved" -> StatusApproved
+                                                                    "Reviewed" -> Color(0xFF0288D1)
+                                                                    else -> StatusPending
+                                                                },
+                                                                selectedLabelColor = Color.White
+                                                            )
+                                                        )
                                                     }
+                                                }
+
+                                                IconButton(
+                                                    onClick = { reportToDelete = report }
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Default.Delete,
+                                                        contentDescription = "Delete Report",
+                                                        tint = StatusRejected
+                                                    )
                                                 }
                                             }
                                         }
@@ -925,7 +1105,13 @@ fun AdminScreen(
                                 Toast.makeText(context, "भंडारा सफलतापूर्वक हटा दिया गया।", Toast.LENGTH_SHORT).show()
                                 refreshAll()
                             } catch (e: Exception) {
-                                Toast.makeText(context, "हटाने में समस्या आई: ${e.message}", Toast.LENGTH_SHORT).show()
+                                val errorMsg = if (e.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true ||
+                                                   e.message?.contains("permission-denied", ignoreCase = true) == true) {
+                                    "अनुमति अस्वीकृत (Permission Denied): केवल अधिकृत एडमिन ही भंडारा हटा सकते हैं।"
+                                } else {
+                                    "हटाने में समस्या आई: ${e.message}"
+                                }
+                                Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
                                 refreshAll()
                             }
                         }
@@ -939,6 +1125,53 @@ fun AdminScreen(
                 OutlinedButton(
                     onClick = { bhandaraToDelete = null }
                 ) {
+                    Text("रद्द करें")
+                }
+            }
+        )
+    }
+
+    // Delete Report Confirmation Dialog
+    if (reportToDelete != null) {
+        val target = reportToDelete!!
+        AlertDialog(
+            onDismissRequest = { reportToDelete = null },
+            title = {
+                Text(
+                    text = "क्या आप यह शिकायत हटाना चाहते हैं?",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "\"${target.bhandaraName.ifBlank { "यह रिपोर्ट" }}\" से संबंधित शिकायत को हटा दिया जाएगा।",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val toDelete = target
+                        reportToDelete = null
+                        scope.launch {
+                            try {
+                                reportList = reportList.filter { it.id != toDelete.id }
+                                repository.deleteReport(toDelete.id, currentUser.auth0UserId)
+                                Toast.makeText(context, "रिपोर्ट सफलतापूर्वक हटा दी गई।", Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "हटाने में समस्या आई: ${e.message}", Toast.LENGTH_SHORT).show()
+                                refreshAll()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = StatusRejected)
+                ) {
+                    Text("हटाएं", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { reportToDelete = null }) {
                     Text("रद्द करें")
                 }
             }
