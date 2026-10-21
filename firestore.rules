@@ -18,7 +18,7 @@ service cloud.firestore {
     }
 
     // ==========================================
-    // 1. BHANDARAS COLLECTION
+    // 1. BHANDARAS COLLECTION (All casing variants)
     // ==========================================
     match /bhandaras/{bhandaraId} {
       allow read: if true;
@@ -42,11 +42,28 @@ service cloud.firestore {
     }
 
     // ==========================================
-    // 2. ADMINS BRIDGE COLLECTION
+    // 2. MEMES COLLECTION (Delete, Show/Hide, Edit, Create for Admin)
+    // ==========================================
+    match /memes/{memeId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin() || isAuthenticated();
+    }
+
+    match /Memes/{memeId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin() || isAuthenticated();
+    }
+
+    match /meme/{memeId} {
+      allow read: if true;
+      allow create, update, delete: if isAdmin() || isAuthenticated();
+    }
+
+    // ==========================================
+    // 3. ADMINS BRIDGE COLLECTION
     // ==========================================
     match /admins/{adminId} {
       allow read: if isAuthenticated();
-      // Verified admin registration bridge
       allow create, update: if isAuthenticated() && 
         request.auth.uid == adminId && 
         (request.resource.data.email == 'shatak1432@gmail.com' || request.resource.data.email.matches('(?i)shatak1432@gmail[.]com')) &&
@@ -55,7 +72,7 @@ service cloud.firestore {
     }
 
     // ==========================================
-    // 3. USERS COLLECTION
+    // 4. USERS COLLECTION
     // ==========================================
     match /users/{userId} {
       allow read: if true;
@@ -69,15 +86,7 @@ service cloud.firestore {
     }
 
     // ==========================================
-    // 4. MEMES COLLECTION (Public Read, Admin Write)
-    // ==========================================
-    match /memes/{memeId} {
-      allow read: if true;
-      allow create, update, delete: if isAdmin() || isAuthenticated();
-    }
-
-    // ==========================================
-    // 5. REPORTS COLLECTION (Public Create, Admin Read/Update/Delete)
+    // 5. REPORTS COLLECTION
     // ==========================================
     match /reports/{reportId} {
       allow create: if true;
@@ -92,7 +101,7 @@ service cloud.firestore {
     }
 
     // ==========================================
-    // 7. APP CONFIG & UPDATE (Public Read, Admin Write)
+    // 7. APP CONFIG
     // ==========================================
     match /app_config/{configId} {
       allow read: if true;
