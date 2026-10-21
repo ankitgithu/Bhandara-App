@@ -1,5 +1,7 @@
 package com.aistudio.bhandara.gwlmbd.ui.navigation
 
+import android.content.Intent
+import android.net.Uri
 import android.util.Log
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -16,15 +18,15 @@ import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.*
 import androidx.navigation.navArgument
+import com.aistudio.bhandara.gwlmbd.R
 import com.aistudio.bhandara.gwlmbd.data.auth.AuthManager
 import com.aistudio.bhandara.gwlmbd.data.model.AppUpdateConfig
-import com.aistudio.bhandara.gwlmbd.data.model.UpdateAnnouncement
 import com.aistudio.bhandara.gwlmbd.data.preferences.AppPreferences
 import com.aistudio.bhandara.gwlmbd.data.repository.BhandaraRepository
 import com.aistudio.bhandara.gwlmbd.ui.components.AppUpdateDialog
 import com.aistudio.bhandara.gwlmbd.ui.components.CitySelectorDialog
 import com.aistudio.bhandara.gwlmbd.ui.components.LoginPromptDialog
-import com.aistudio.bhandara.gwlmbd.ui.components.UpdateAnnouncementDialog
+import com.aistudio.bhandara.gwlmbd.ui.components.TelegramJoinDialog
 import com.aistudio.bhandara.gwlmbd.util.AppUpdateManager
 import kotlinx.coroutines.launch
 import com.aistudio.bhandara.gwlmbd.ui.screens.add.AddBhandaraScreen
@@ -70,44 +72,15 @@ fun BhandaraNavGraph(
     // Scoped AddBhandaraViewModel retains form state across all navigation transitions!
     val addBhandaraViewModel: AddBhandaraViewModel = viewModel()
 
-    val startDestination = if (preferences.isWelcomeCompleted) "main_container" else "welcome"
+    val startDestination = "welcome"
 
     var showCitySelectorDialog by remember { mutableStateOf(false) }
     var showLoginPromptDialog by remember { mutableStateOf(false) }
     var startupUpdateConfig by remember { mutableStateOf<AppUpdateConfig?>(null) }
 
-    // Update announcement state for normal and guest users (once per app launch session)
-    var activeAnnouncement by remember { mutableStateOf<UpdateAnnouncement?>(null) }
-    var isAnnouncementDismissedSession by remember { mutableStateOf(false) }
-
-    // Check & listen for active Update Announcements (Excludes Admin users!)
-    LaunchedEffect(currentUser) {
-        val user = currentUser
-        // Admin must never see the popup (Requirement 7)
-        if (user != null && user.isAdmin()) {
-            activeAnnouncement = null
-            return@LaunchedEffect
-        }
-
-        launch {
-            try {
-                repository.listenToUpdateAnnouncement().collect { announcement ->
-                    if (announcement != null && announcement.isActive &&
-                        announcement.message.isNotBlank() && announcement.updateLink.isNotBlank()
-                    ) {
-                        // Display if not dismissed this session, OR if admin sent a brand new announcement timestamp!
-                        if (!isAnnouncementDismissedSession || announcement.updatedAt > (activeAnnouncement?.updatedAt ?: 0L)) {
-                            activeAnnouncement = announcement
-                        }
-                    } else {
-                        activeAnnouncement = null
-                    }
-                }
-            } catch (e: Exception) {
-                Log.w("NavGraph", "listenToUpdateAnnouncement error: ${e.message}")
-            }
-        }
-    }
+    // Telegram popup state after location selection (shown once per app launch session)
+    var showTelegramDialog by remember { mutableStateOf(false) }
+    var hasShownTelegramPopupThisSession by remember { mutableStateOf(false) }
 
     // Safe startup update checker (fires once on start, checks 24h cooldown unless mandatory)
     LaunchedEffect(Unit) {
@@ -141,15 +114,21 @@ fun BhandaraNavGraph(
         navController = navController,
         startDestination = startDestination
     ) {
-        // Welcome Screen
+        // Welcome Screen (Location Selection)
         composable("welcome") {
             WelcomeScreen(
+                initialCity = preferences.selectedCity,
                 onCitySelected = { city ->
                     try {
                         preferences.selectedCity = city
                         preferences.isWelcomeCompleted = true
-                        navController.navigate("main_container") {
-                            popUpTo("welcome") { inclusive = true }
+                        if (!hasShownTelegramPopupThisSession) {
+                            hasShownTelegramPopupThisSession = true
+                            showTelegramDialog = true
+                        } else {
+                            navController.navigate("main_container") {
+                                popUpTo("welcome") { inclusive = true }
+                            }
                         }
                     } catch (e: Exception) {
                         Log.e("NavGraph", "nav welcome to main_container failed: ${e.message}")
@@ -518,13 +497,37 @@ fun BhandaraNavGraph(
         )
     }
 
-    // Normal User / Guest Announcement Popup (Strictly excluded for Admin!)
-    if (activeAnnouncement != null && (currentUser == null || !currentUser!!.isAdmin())) {
-        UpdateAnnouncementDialog(
-            announcement = activeAnnouncement!!,
+    // Optional Telegram Channel Join Popup (Shown after location selection, once per session)
+    if (showTelegramDialog) {
+        TelegramJoinDialog(
+            onJoinClick = {
+                showTelegramDialog = false
+                try {
+                    val telegramUrl = context.getString(R.string.telegram_channel_url)
+                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(telegramUrl)).apply {
+                        flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                    }
+                    context.startActivity(intent)
+                } catch (e: Exception) {
+                    Log.e("NavGraph", "Could not open telegram URL: ${e.message}")
+                }
+                try {
+                    navController.navigate("main_container") {
+                        popUpTo("welcome") { inclusive = true }
+                    }
+                } catch (e: Exception) {
+                    Log.e("NavGraph", "nav to main_container failed: ${e.message}")
+                }
+            },
             onDismiss = {
-                isAnnouncementDismissedSession = true
-                activeAnnouncement = null
+                showTelegramDialog = false
+                try {
+                    navController.navigate("main_container") {
+                        popUpTo("welcome") { inclusive = true }
+                    }
+                } catch (e: Exception) {
+                    Log.e("NavGraph", "nav to main_container failed: ${e.message}")
+                }
             }
         )
     }

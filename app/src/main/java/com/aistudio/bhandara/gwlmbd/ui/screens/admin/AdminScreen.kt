@@ -25,7 +25,6 @@ import com.aistudio.bhandara.gwlmbd.data.model.*
 import com.aistudio.bhandara.gwlmbd.data.repository.BhandaraRepository
 import com.aistudio.bhandara.gwlmbd.ui.components.AppUpdateDialog
 import com.aistudio.bhandara.gwlmbd.ui.components.EmptyStateView
-import com.aistudio.bhandara.gwlmbd.ui.components.UpdateAnnouncementDialog
 import com.aistudio.bhandara.gwlmbd.ui.theme.*
 import com.aistudio.bhandara.gwlmbd.util.AppUpdateManager
 import kotlinx.coroutines.launch
@@ -75,20 +74,13 @@ fun AdminScreen(
     }
 
     var selectedAdminTab by remember { mutableIntStateOf(0) }
-    val adminTabs = listOf("सक्रिय भंडारे", "समाप्त भंडारे", "मीम प्रबंधन", "शिकायतें", "Send Update 🚀", "APK वर्ज़न")
+    val adminTabs = listOf("सक्रिय भंडारे", "समाप्त भंडारे", "मीम प्रबंधन", "शिकायतें", "APK वर्ज़न")
 
     var activeList by remember { mutableStateOf<List<Bhandara>>(emptyList()) }
     var expiredList by remember { mutableStateOf<List<Bhandara>>(emptyList()) }
     var memeList by remember { mutableStateOf<List<Meme>>(emptyList()) }
     var reportList by remember { mutableStateOf<List<Report>>(emptyList()) }
     var appUpdateConfig by remember { mutableStateOf(AppUpdateConfig()) }
-
-    var updateAnnouncement by remember { mutableStateOf(UpdateAnnouncement()) }
-    var announcementMessage by remember { mutableStateOf(UpdateAnnouncement().message) }
-    var announcementLink by remember { mutableStateOf(UpdateAnnouncement().updateLink) }
-    var isAnnouncementActive by remember { mutableStateOf(true) }
-    var isSavingAnnouncement by remember { mutableStateOf(false) }
-    var showAnnouncementPreviewDialog by remember { mutableStateOf(false) }
 
     var isLoading by remember { mutableStateOf(false) }
     var isSavingConfig by remember { mutableStateOf(false) }
@@ -111,13 +103,6 @@ fun AdminScreen(
                 val updateCfg = repository.getAppUpdateConfig()
                 if (updateCfg != null) {
                     appUpdateConfig = updateCfg
-                }
-                val announcement = repository.getUpdateAnnouncement()
-                if (announcement != null) {
-                    updateAnnouncement = announcement
-                    announcementMessage = announcement.message
-                    announcementLink = announcement.updateLink
-                    isAnnouncementActive = announcement.isActive
                 }
             } catch (e: Exception) {
                 // Keep resilient
@@ -166,18 +151,6 @@ fun AdminScreen(
         launch {
             repository.listenToMemesForAdmin().collect {
                 memeList = it
-            }
-        }
-        launch {
-            repository.listenToUpdateAnnouncement().collect { announcement ->
-                if (announcement != null) {
-                    updateAnnouncement = announcement
-                    if (!isSavingAnnouncement) {
-                        announcementMessage = announcement.message
-                        announcementLink = announcement.updateLink
-                        isAnnouncementActive = announcement.isActive
-                    }
-                }
             }
         }
     }
@@ -802,205 +775,8 @@ fun AdminScreen(
                         }
                     }
 
-                    // 4: Send Update Announcement
+                    // 4: App Update Management (APK Versioning)
                     4 -> {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .verticalScroll(rememberScrollState())
-                                .padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            // Status & Switch Card
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "घोषणा स्थिति (Announcement Status)",
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = if (isAnnouncementActive) "घोषणा चालू है (Active) 🚀" else "घोषणा बंद है (Disabled)",
-                                            style = MaterialTheme.typography.titleMedium,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (isAnnouncementActive) StatusApproved else StatusRejected
-                                        )
-                                    }
-
-                                    Switch(
-                                        checked = isAnnouncementActive,
-                                        onCheckedChange = { isChecked ->
-                                            isAnnouncementActive = isChecked
-                                            scope.launch {
-                                                try {
-                                                    val updated = updateAnnouncement.copy(
-                                                        message = announcementMessage,
-                                                        updateLink = announcementLink,
-                                                        isActive = isChecked,
-                                                        updatedAt = System.currentTimeMillis()
-                                                    )
-                                                    updateAnnouncement = updated
-                                                    repository.saveUpdateAnnouncement(updated, currentUser.auth0UserId)
-                                                    Toast.makeText(
-                                                        context,
-                                                        if (isChecked) "Update announcement चालू कर दिया गया है।" else "Update announcement बंद कर दिया गया है।",
-                                                        Toast.LENGTH_SHORT
-                                                    ).show()
-                                                } catch (e: Exception) {
-                                                    Toast.makeText(context, "स्थिति बदलने में त्रुटि: ${e.message}", Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
-                                        }
-                                    )
-                                }
-                            }
-
-                            // Form Card
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                elevation = CardDefaults.cardElevation(2.dp)
-                            ) {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(16.dp),
-                                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                                ) {
-                                    Text(
-                                        text = "Send Update (अपडेट घोषणा भेजें)",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = DeepRed
-                                    )
-                                    Text(
-                                        text = "यहाँ दिया गया संदेश और Telegram लिंक सभी सामान्य व गेस्ट यूज़र्स को ऐप खोलते ही पॉपअप में दिखेगा।",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-
-                                    // Message input
-                                    OutlinedTextField(
-                                        value = announcementMessage,
-                                        onValueChange = { announcementMessage = it },
-                                        label = { Text("Message (अपडेट संदेश)") },
-                                        placeholder = { Text("भंडारा App का नया Update आ गया है 🚀\nUpdate डाउनलोड करें...") },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        minLines = 4,
-                                        maxLines = 8,
-                                        shape = RoundedCornerShape(12.dp)
-                                    )
-
-                                    // Updated App Link input
-                                    OutlinedTextField(
-                                        value = announcementLink,
-                                        onValueChange = { announcementLink = it },
-                                        label = { Text("Updated App Link (Telegram Channel Link)") },
-                                        placeholder = { Text("https://t.me/your_channel") },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        singleLine = true,
-                                        leadingIcon = {
-                                            Icon(imageVector = Icons.Default.Link, contentDescription = null, tint = DeepRed)
-                                        },
-                                        shape = RoundedCornerShape(12.dp)
-                                    )
-
-                                    if (updateAnnouncement.updatedAt > 0L) {
-                                        Text(
-                                            text = "अंतिम घोषणा: ${formatTimestamp(updateAnnouncement.updatedAt)}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.outline
-                                        )
-                                    }
-
-                                    Spacer(modifier = Modifier.height(4.dp))
-
-                                    // Send Update Button
-                                    Button(
-                                        onClick = {
-                                            val msg = announcementMessage.trim()
-                                            val link = announcementLink.trim()
-                                            if (msg.isBlank()) {
-                                                Toast.makeText(context, "कृपया संदेश (Message) दर्ज करें", Toast.LENGTH_SHORT).show()
-                                                return@Button
-                                            }
-                                            if (link.isBlank()) {
-                                                Toast.makeText(context, "कृपया Telegram लिंक दर्ज करें", Toast.LENGTH_SHORT).show()
-                                                return@Button
-                                            }
-
-                                            scope.launch {
-                                                isSavingAnnouncement = true
-                                                try {
-                                                    val newAnnouncement = UpdateAnnouncement(
-                                                        message = msg,
-                                                        updateLink = link,
-                                                        isActive = true,
-                                                        updatedAt = System.currentTimeMillis()
-                                                    )
-                                                    updateAnnouncement = newAnnouncement
-                                                    isAnnouncementActive = true
-                                                    repository.saveUpdateAnnouncement(newAnnouncement, currentUser.auth0UserId)
-                                                    Toast.makeText(context, "Update announcement भेज दिया गया।", Toast.LENGTH_LONG).show()
-                                                } catch (e: Exception) {
-                                                    Toast.makeText(context, "घोषणा भेजने में त्रुटि: ${e.message}", Toast.LENGTH_LONG).show()
-                                                } finally {
-                                                    isSavingAnnouncement = false
-                                                }
-                                            }
-                                        },
-                                        enabled = !isSavingAnnouncement,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(48.dp),
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = DeepRed)
-                                    ) {
-                                        if (isSavingAnnouncement) {
-                                            CircularProgressIndicator(
-                                                modifier = Modifier.size(20.dp),
-                                                strokeWidth = 2.dp,
-                                                color = Color.White
-                                            )
-                                        } else {
-                                            Icon(imageVector = Icons.Default.Send, contentDescription = null)
-                                            Spacer(modifier = Modifier.width(8.dp))
-                                            Text("Send Update (अपडेट भेजें 🚀)", fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-
-                                    // Preview Dialog Button
-                                    OutlinedButton(
-                                        onClick = { showAnnouncementPreviewDialog = true },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(48.dp),
-                                        shape = RoundedCornerShape(12.dp)
-                                    ) {
-                                        Icon(imageVector = Icons.Default.Visibility, contentDescription = null)
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Text("पॉपअप प्रीव्यू देखें (Preview)")
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // 5: App Update Management (APK Versioning)
-                    5 -> {
                         val installedCode = AppUpdateManager.getInstalledVersionCode(context)
                         val installedName = AppUpdateManager.getInstalledVersionName(context)
 
@@ -1294,18 +1070,6 @@ fun AdminScreen(
             config = appUpdateConfig,
             currentVersionName = AppUpdateManager.getInstalledVersionName(context),
             onDismiss = { showUpdatePreviewDialog = false }
-        )
-    }
-
-    // Announcement Dialog Preview
-    if (showAnnouncementPreviewDialog) {
-        UpdateAnnouncementDialog(
-            announcement = updateAnnouncement.copy(
-                message = announcementMessage,
-                updateLink = announcementLink,
-                isActive = isAnnouncementActive
-            ),
-            onDismiss = { showAnnouncementPreviewDialog = false }
         )
     }
 

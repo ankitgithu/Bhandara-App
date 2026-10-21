@@ -25,9 +25,10 @@ import com.aistudio.bhandara.gwlmbd.ui.theme.*
 
 @Composable
 fun WelcomeScreen(
+    initialCity: String = "gwalior",
     onCitySelected: (String) -> Unit
 ) {
-    var selectedCity by remember { mutableStateOf("gwalior") }
+    var selectedCity by remember { mutableStateOf(if (initialCity.isNotBlank()) initialCity else "gwalior") }
 
     Box(
         modifier = Modifier
@@ -176,7 +177,7 @@ fun WelcomeScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = DeepRed)
                     ) {
                         Text(
-                            text = "शुरू करें",
+                            text = "Next ➔",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = Color.White

@@ -7,7 +7,6 @@ import com.aistudio.bhandara.gwlmbd.data.model.Bhandara
 import com.aistudio.bhandara.gwlmbd.data.model.Meme
 import com.aistudio.bhandara.gwlmbd.data.model.Report
 import com.aistudio.bhandara.gwlmbd.data.model.SavedBhandara
-import com.aistudio.bhandara.gwlmbd.data.model.UpdateAnnouncement
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
@@ -790,50 +789,6 @@ class BhandaraRepository {
             Log.e(tag, "setAppUpdateConfig error: ${e.message}", e)
             throw e
         }
-    }
-
-    // ==========================================
-    // UPDATE ANNOUNCEMENT (SEND UPDATE) SYSTEM
-    // ==========================================
-
-    suspend fun getUpdateAnnouncement(): UpdateAnnouncement? {
-        return try {
-            val doc = firestore.collection("app_config").document("update_announcement").get().await()
-            if (doc.exists()) {
-                doc.toObject(UpdateAnnouncement::class.java)
-            } else {
-                null
-            }
-        } catch (e: Exception) {
-            Log.e(tag, "getUpdateAnnouncement error: ${e.message}")
-            null
-        }
-    }
-
-    suspend fun saveUpdateAnnouncement(announcement: UpdateAnnouncement, adminId: String? = null) {
-        val data = announcement.copy(updatedAt = System.currentTimeMillis())
-        firestore.collection("app_config").document("update_announcement").set(data).await()
-        if (!adminId.isNullOrBlank()) {
-            try {
-                logAdminAction(adminId, "send_update_announcement", "update_announcement", "Announcement saved (active: ${data.isActive})")
-            } catch (_: Exception) {}
-        }
-    }
-
-    fun listenToUpdateAnnouncement(): Flow<UpdateAnnouncement?> = callbackFlow {
-        val listener = firestore.collection("app_config").document("update_announcement")
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    Log.e(tag, "listenToUpdateAnnouncement error: ${error.message}")
-                    return@addSnapshotListener
-                }
-                if (snapshot != null && snapshot.exists()) {
-                    trySend(snapshot.toObject(UpdateAnnouncement::class.java))
-                } else {
-                    trySend(null)
-                }
-            }
-        awaitClose { listener.remove() }
     }
 
     suspend fun logAdminAction(adminId: String, action: String, targetId: String, details: String) {
