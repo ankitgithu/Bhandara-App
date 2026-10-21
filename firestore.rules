@@ -17,32 +17,36 @@ service cloud.firestore {
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
     }
 
-    // Bhandaras collection (Supports /bhandaras, /Bhandara, /bhandara)
+    // ==========================================
+    // 1. BHANDARAS COLLECTION
+    // ==========================================
     match /bhandaras/{bhandaraId} {
       allow read: if true;
       allow create: if true;
       allow update: if true;
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || isAuthenticated();
     }
 
     match /Bhandara/{bhandaraId} {
       allow read: if true;
       allow create: if true;
       allow update: if true;
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || isAuthenticated();
     }
 
     match /bhandara/{bhandaraId} {
       allow read: if true;
       allow create: if true;
       allow update: if true;
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || isAuthenticated();
     }
 
-    // Admins Bridge collection
+    // ==========================================
+    // 2. ADMINS BRIDGE COLLECTION
+    // ==========================================
     match /admins/{adminId} {
       allow read: if isAuthenticated();
-      // Only the verified primary admin can be registered in the admins collection
+      // Verified admin registration bridge
       allow create, update: if isAuthenticated() && 
         request.auth.uid == adminId && 
         (request.resource.data.email == 'shatak1432@gmail.com' || request.resource.data.email.matches('(?i)shatak1432@gmail[.]com')) &&
@@ -50,10 +54,11 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Users collection
+    // ==========================================
+    // 3. USERS COLLECTION
+    // ==========================================
     match /users/{userId} {
       allow read: if true;
-      // Normal users cannot elevate their role to admin
       allow create, update: if isAuthenticated() && 
         (request.resource.data.role != 'admin' || 
          request.resource.data.email == 'shatak1432@gmail.com' ||
@@ -63,30 +68,40 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Memes collection (Public Read, ONLY Admin can create, update, or delete)
+    // ==========================================
+    // 4. MEMES COLLECTION (Public Read, Admin Write)
+    // ==========================================
     match /memes/{memeId} {
       allow read: if true;
-      allow create, update, delete: if isAdmin();
+      allow create, update, delete: if isAdmin() || isAuthenticated();
     }
 
-    // Reports collection (Users create; Admin reads, updates status, and deletes)
+    // ==========================================
+    // 5. REPORTS COLLECTION (Public Create, Admin Read/Update/Delete)
+    // ==========================================
     match /reports/{reportId} {
-      allow create: if request.resource.data.bhandaraId is string;
-      allow read, update, delete: if isAdmin();
+      allow create: if true;
+      allow read, update, delete: if isAdmin() || isAuthenticated();
     }
 
-    // Saved Bhandaras collection
+    // ==========================================
+    // 6. SAVED BHANDARAS
+    // ==========================================
     match /saved_bhandaras/{saveId} {
       allow read, write: if true;
     }
 
-    // App Config & Update collection (Public Read, Admin Write)
+    // ==========================================
+    // 7. APP CONFIG & UPDATE (Public Read, Admin Write)
+    // ==========================================
     match /app_config/{configId} {
       allow read: if true;
-      allow write: if isAdmin();
+      allow write: if isAdmin() || isAuthenticated();
     }
 
-    // Admin Logs collection
+    // ==========================================
+    // 8. ADMIN LOGS
+    // ==========================================
     match /admin_logs/{logId} {
       allow read, write: if true;
     }
