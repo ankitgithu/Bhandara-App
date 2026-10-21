@@ -18,12 +18,15 @@ import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import com.aistudio.bhandara.gwlmbd.data.auth.AuthManager
 import com.aistudio.bhandara.gwlmbd.data.model.AppUpdateConfig
+import com.aistudio.bhandara.gwlmbd.data.model.UpdateAnnouncement
 import com.aistudio.bhandara.gwlmbd.data.preferences.AppPreferences
 import com.aistudio.bhandara.gwlmbd.data.repository.BhandaraRepository
 import com.aistudio.bhandara.gwlmbd.ui.components.AppUpdateDialog
 import com.aistudio.bhandara.gwlmbd.ui.components.CitySelectorDialog
 import com.aistudio.bhandara.gwlmbd.ui.components.LoginPromptDialog
+import com.aistudio.bhandara.gwlmbd.ui.components.UpdateAnnouncementDialog
 import com.aistudio.bhandara.gwlmbd.util.AppUpdateManager
+import kotlinx.coroutines.launch
 import com.aistudio.bhandara.gwlmbd.ui.screens.add.AddBhandaraScreen
 import com.aistudio.bhandara.gwlmbd.ui.screens.add.AddBhandaraViewModel
 import com.aistudio.bhandara.gwlmbd.ui.screens.admin.AdminScreen
@@ -72,6 +75,39 @@ fun BhandaraNavGraph(
     var showCitySelectorDialog by remember { mutableStateOf(false) }
     var showLoginPromptDialog by remember { mutableStateOf(false) }
     var startupUpdateConfig by remember { mutableStateOf<AppUpdateConfig?>(null) }
+
+    // Update announcement state for normal and guest users (once per app launch session)
+    var activeAnnouncement by remember { mutableStateOf<UpdateAnnouncement?>(null) }
+    var isAnnouncementDismissedSession by remember { mutableStateOf(false) }
+
+    // Check & listen for active Update Announcements (Excludes Admin users!)
+    LaunchedEffect(currentUser) {
+        val user = currentUser
+        // Admin must never see the popup (Requirement 7)
+        if (user != null && user.isAdmin()) {
+            activeAnnouncement = null
+            return@LaunchedEffect
+        }
+
+        launch {
+            try {
+                repository.listenToUpdateAnnouncement().collect { announcement ->
+                    if (announcement != null && announcement.isActive &&
+                        announcement.message.isNotBlank() && announcement.updateLink.isNotBlank()
+                    ) {
+                        // Display if not dismissed this session, OR if admin sent a brand new announcement timestamp!
+                        if (!isAnnouncementDismissedSession || announcement.updatedAt > (activeAnnouncement?.updatedAt ?: 0L)) {
+                            activeAnnouncement = announcement
+                        }
+                    } else {
+                        activeAnnouncement = null
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w("NavGraph", "listenToUpdateAnnouncement error: ${e.message}")
+            }
+        }
+    }
 
     // Safe startup update checker (fires once on start, checks 24h cooldown unless mandatory)
     LaunchedEffect(Unit) {
@@ -478,6 +514,17 @@ fun BhandaraNavGraph(
                 preferences.lastDismissedUpdateVersionCode = startupUpdateConfig!!.latestVersionCode
                 preferences.lastUpdateCheckTime = System.currentTimeMillis()
                 startupUpdateConfig = null
+            }
+        )
+    }
+
+    // Normal User / Guest Announcement Popup (Strictly excluded for Admin!)
+    if (activeAnnouncement != null && (currentUser == null || !currentUser!!.isAdmin())) {
+        UpdateAnnouncementDialog(
+            announcement = activeAnnouncement!!,
+            onDismiss = {
+                isAnnouncementDismissedSession = true
+                activeAnnouncement = null
             }
         )
     }
