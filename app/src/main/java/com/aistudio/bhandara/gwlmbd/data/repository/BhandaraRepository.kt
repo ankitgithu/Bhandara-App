@@ -490,30 +490,65 @@ class BhandaraRepository {
     }
 
     suspend fun deleteBhandara(id: String, adminId: String) {
+        // Step 1: Attempt to establish Firebase Auth session safely without throwing
         try {
-            // Ensure Firebase Auth session is active
             val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
             if (auth.currentUser == null) {
                 auth.signInAnonymously().await()
             }
-            firestore.collection("bhandaras").document(id).delete().await()
-            try {
-                firestore.collection("Bhandara").document(id).delete().await()
-            } catch (_: Exception) {}
-            try {
-                firestore.collection("bhandara").document(id).delete().await()
-            } catch (_: Exception) {}
-            try {
-                logAdminAction(adminId, "delete", id, "Bhandara permanently deleted by admin")
-            } catch (e: Exception) {
-                Log.w(tag, "logAdminAction failed: ${e.message}")
-            }
         } catch (e: Exception) {
-            Log.e(tag, "deleteBhandara error: ${e.message}", e)
-            throw e
+            Log.w(tag, "FirebaseAuth anonymous sign-in skipped: ${e.message}")
         }
+
+        var deletionSuccessful = false
+
+        // Step 2: Try direct document deletion from Firestore across all possible collection name variations
+        val collections = listOf("bhandaras", "Bhandara", "bhandara")
+        for (col in collections) {
+            try {
+                firestore.collection(col).document(id).delete().await()
+                deletionSuccessful = true
+                Log.d(tag, "Hard delete succeeded on $col for $id")
+            } catch (e: Exception) {
+                Log.w(tag, "Hard delete attempt on $col for $id failed: ${e.message}")
+            }
+        }
+
+        // Step 3: If hard delete didn't succeed (e.g. blocked by Firestore rules), mark document as deleted
+        // so it immediately vanishes from all user screens, admin lists, and real-time listeners
+        if (!deletionSuccessful) {
+            val softDeleteData = mapOf(
+                "status" to "deleted",
+                "approvalStatus" to "deleted",
+                "isDeleted" to true,
+                "deletedAt" to System.currentTimeMillis(),
+                "deletedBy" to adminId,
+                "updatedAt" to System.currentTimeMillis()
+            )
+            for (col in collections) {
+                try {
+                    firestore.collection(col).document(id).update(softDeleteData).await()
+                    deletionSuccessful = true
+                    Log.d(tag, "Soft delete succeeded on $col for $id")
+                } catch (e: Exception) {
+                    Log.w(tag, "Soft delete attempt on $col for $id failed: ${e.message}")
+                }
+            }
+        }
+
+        // Step 4: Always purge from in-memory caches immediately
         cachedBhandaras.removeAll { it.id == id }
         cachedAllActiveBhandaras.removeAll { it.id == id }
+
+        try {
+            logAdminAction(adminId, "delete", id, "Bhandara permanently deleted by admin ($id)")
+        } catch (e: Exception) {
+            Log.w(tag, "logAdminAction failed: ${e.message}")
+        }
+
+        if (!deletionSuccessful) {
+            throw Exception("डेटाबेस से हटाने की अनुमति नहीं मिली। कृपया Firebase Console में Rules चेक करें।")
+        }
     }
 
     fun listenToAllActiveBhandarasForAdmin(): Flow<List<Bhandara>> = callbackFlow {
