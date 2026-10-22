@@ -141,6 +141,15 @@ fun HomeScreen(
             contentPadding = PaddingValues(bottom = 80.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            // 16:9 Banner Slider at the very top of Home Screen
+            item(key = "home_top_banner_slider") {
+                HomeBannerSlider(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 10.dp)
+                )
+            }
+
             // Top Section: City, Greeting, Donate & Theme Toggle
             item {
                 Column(
